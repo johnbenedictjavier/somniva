@@ -1,0 +1,20 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.vercel/
+/supabase/.temp/
+
+# Legacy snapshot and unused media are kept locally but are not part of the active app.
+/main.html
+/main.js
+/design.css
+/chicken.MP4
+/purchase.MP4
+
+# Dream artwork is stored in private Supabase Storage, not in the public repository.
+/img/*
+
+# Seed data contains the private dream archive and stays local after migration.
+/supabase/seed.sql
+/supabase/seed-awards.sql

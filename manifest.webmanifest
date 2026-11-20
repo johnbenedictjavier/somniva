@@ -1,0 +1,31 @@
+{
+    "name": "Somniva | The Mystery",
+    "short_name": "Somniva",
+    "description": "A living archive of remembered dreams.",
+    "start_url": "./mystery.html",
+    "scope": "./",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "background_color": "#080b15",
+    "theme_color": "#090d19",
+    "icons": [
+        {
+            "src": "somniva_logo.png",
+            "sizes": "any",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "somniva_logo.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "somniva_logo.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#090d19">
+    <meta name="description" content="Somniva, The Mystery: a private archive of remembered dreams.">
+    <title>Somniva | The Mystery</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="somniva_logo.png" type="image/png">
+    <link rel="apple-touch-icon" href="somniva_logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="design2.css">
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js" defer></script>
+    <script src="config.js" defer></script>
+    <script src="main2.js" defer></script>
+</head>
+
+<body class="locked">
+    <header id="main-nav" class="top-nav" hidden>
+        <button class="brand" type="button" data-section="home-section" aria-label="Go to Somniva home">
+            <img src="somniva_logo.png" alt="Somniva">
+            <span>Somniva</span>
+            <small>The Mystery</small>
+        </button>
+        <div class="nav-actions">
+            <button id="install-button" class="ghost-button install-button" type="button" hidden>Install app</button>
+            <button id="admin-button" class="ghost-button" type="button" aria-expanded="false">Manage</button>
+        </div>
+    </header>
+
+    <main id="app-container">
+        <section id="lock-section" class="lock-section">
+            <div class="lock-card glass-panel">
+                <img class="lock-logo" src="somniva_logo.png" alt="Somniva logo">
+                <div class="eyebrow">A private atlas of remembered worlds</div>
+                <h1>Somniva</h1>
+                <p class="hero-subtitle">The Mystery</p>
+                <p class="hero-copy">This archive belongs to the dreamer.</p>
+                <form id="unlock-form" class="unlock-form">
+                    <label for="unlock-password">Archive password</label>
+                    <div class="unlock-row">
+                        <input id="unlock-password" type="password" autocomplete="current-password" placeholder="Enter password" required>
+                        <button class="primary-button" type="submit">Unlock</button>
+                    </div>
+                    <p id="unlock-status" class="form-status" role="status"></p>
+                </form>
+            </div>
+        </section>
+
+        <div id="private-app" hidden>
+            <section id="home-section" class="app-section active">
+                <div class="home-shell">
+                    <div class="hero-card glass-panel">
+                        <img class="hero-logo" src="somniva_logo.png" alt="Somniva">
+                        <div class="eyebrow">A private atlas of remembered worlds</div>
+                        <h1>Somniva</h1>
+                        <p class="hero-subtitle">The Mystery</p>
+                        <p class="hero-copy">Dreams fade. The details do not have to.</p>
+                        <div class="hero-actions">
+                            <button class="primary-button" type="button" data-section="stories-section">Enter the archive</button>
+                            <button class="secondary-button" type="button" data-section="best-section">View Hall of Fame</button>
+                        </div>
+                        <div id="data-status" class="status-message" role="status" hidden></div>
+                    </div>
+
+                    <div class="home-grid">
+                        <article id="recent-dream-card" class="glass-panel feature-card">
+                            <div class="card-kicker">Latest entry</div>
+                            <div id="recent-dream-content" class="loading-copy">Loading the latest dream...</div>
+                        </article>
+                        <article id="home-winners-card" class="glass-panel feature-card">
+                            <div class="card-kicker">The chosen few</div>
+                            <h2>Hall of Fame first places</h2>
+                            <div id="home-winners" class="mini-winners loading-copy">Loading the winners...</div>
+                        </article>
+                    </div>
+
+                    <div id="admin-panel" class="admin-panel glass-panel" hidden>
+                        <div class="admin-heading">
+                            <div>
+                                <div class="card-kicker">Owner workspace</div>
+                                <h2>Archive controls</h2>
+                            </div>
+                            <button id="admin-close" class="icon-button" type="button" aria-label="Close archive controls">&times;</button>
+                        </div>
+
+                        <form id="story-form" class="editor-form">
+                            <div class="form-heading">
+                                <div>
+                                    <div class="card-kicker">New archive entry</div>
+                                    <h3>Add a dream</h3>
+                                </div>
+                                <span class="form-note">All fields marked * are required</span>
+                            </div>
+                            <div class="form-grid">
+                                <label>Title *<input id="story-title" type="text" required maxlength="180"></label>
+                                <label>Page number *<input id="story-page" type="number" min="1" required></label>
+                                <label>Dream date *<input id="story-date" type="date" required></label>
+                                <label>Link (optional)<input id="story-link" type="text" pattern="p[0-9]+[a-z]*" placeholder="Generated automatically"></label>
+                            </div>
+
+                            <div class="image-workflow">
+                                <label>Cover photo *<input id="story-image" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+                                <button id="generate-image-prompt" class="secondary-button" type="button">Generate image prompt</button>
+                            </div>
+                            <div id="image-prompt-output" class="image-prompt-output" hidden>
+                                <label>Somniva image prompt<textarea id="story-image-prompt" rows="8" readonly></textarea></label>
+                                <div class="prompt-actions">
+                                    <button id="copy-image-prompt" class="text-button" type="button">Copy prompt</button>
+                                    <span id="image-prompt-status" class="form-status" role="status"></span>
+                                </div>
+                                <img id="story-image-preview" class="story-upload-preview" alt="Selected cover preview" hidden>
+                            </div>
+
+                            <div class="paragraph-heading">
+                                <span>Story paragraphs *</span>
+                                <button id="add-paragraph" class="text-button" type="button">+ Add paragraph</button>
+                            </div>
+                            <div id="paragraph-list" class="paragraph-list"></div>
+                            <div class="form-actions">
+                                <button class="primary-button" type="submit">Save dream</button>
+                                <span id="story-form-status" class="form-status" role="status"></span>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <section id="best-section" class="app-section">
+                <div class="hall-of-fame-viewport">
+                    <div class="section-heading centered-heading">
+                        <div class="eyebrow">Curated by the dreamer</div>
+                        <h1 class="hall-title">Hall of Fame</h1>
+                        <p class="subtitle">Mementos of the most vivid realms</p>
+                    </div>
+
+                    <div id="hall-admin-tools" class="admin-inline glass-panel">
+                        <div class="admin-heading">
+                            <div>
+                                <div class="card-kicker">Owner controls</div>
+                                <h2>Shape the Hall of Fame</h2>
+                            </div>
+                        </div>
+                        <form id="award-form" class="form-grid compact-form">
+                            <label>Award name *<input id="award-name" type="text" required maxlength="100"></label>
+                            <label>Display order *<input id="award-order" type="number" min="0" value="1" required></label>
+                            <label class="full-field">Description<textarea id="award-description" rows="2"></textarea></label>
+                            <div class="form-actions full-field">
+                                <button class="primary-button" type="submit">Add award</button>
+                                <span id="award-form-status" class="form-status" role="status"></span>
+                            </div>
+                        </form>
+                        <form id="winner-form" class="winner-form">
+                            <label>Award<select id="winner-award" required></select></label>
+                            <label>Rank<select id="winner-rank" required><option value="1">Top 1</option><option value="2">Top 2</option><option value="3">Top 3</option></select></label>
+                            <label>Story<select id="winner-story" required></select></label>
+                            <button class="secondary-button" type="submit">Set winner</button>
+                            <span id="winner-form-status" class="form-status" role="status"></span>
+                        </form>
+                    </div>
+
+                    <div id="awards-container" class="awards-container"></div>
+                </div>
+            </section>
+
+            <section id="index-section" class="app-section">
+                <div class="index-card glass-panel">
+                    <div class="pagenum" id="page-indicator">I</div>
+                    <div class="section-heading">
+                        <div class="eyebrow">The living index</div>
+                        <h1>Titles &amp; Pages</h1>
+                        <p class="subtitle">Automatically sorted alphabetically</p>
+                    </div>
+                    <div id="events-container" class="events-container"></div>
+                    <div class="pagination-controls">
+                        <button id="prev-btn" class="pagination-button" type="button">Previous</button>
+                        <span id="page-count">Page 1</span>
+                        <button id="next-btn" class="pagination-button" type="button">Next</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="stories-section" class="app-section">
+                <div id="stories-viewport" class="book-viewport">
+                    <div id="stories-container" class="stories-container"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <nav id="bottom-nav" class="floating-nav" aria-label="Primary navigation" hidden>
+        <button class="nav-item active" type="button" data-section="home-section" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">⌂</span><span>Home</span>
+        </button>
+        <button class="nav-item" type="button" data-section="index-section">
+            <span class="nav-icon" aria-hidden="true">≡</span><span>Titles &amp; Pages</span>
+        </button>
+        <button class="nav-item" type="button" data-section="stories-section">
+            <span class="nav-icon" aria-hidden="true">◈</span><span>Stories</span>
+        </button>
+        <button class="nav-item" type="button" data-section="best-section">
+            <span class="nav-icon" aria-hidden="true">✦</span><span>Hall of Fame</span>
+        </button>
+    </nav>
+
+    <div id="vote-modal" class="modal-backdrop" hidden>
+        <div class="modal-card glass-panel" role="dialog" aria-modal="true" aria-labelledby="vote-heading">
+            <button id="vote-close" class="icon-button modal-close" type="button" aria-label="Close vote dialog">&times;</button>
+            <div class="eyebrow">Your mark in the archive</div>
+            <h2 id="vote-heading">Rate this dream</h2>
+            <p id="vote-story-title" class="modal-story-title"></p>
+            <form id="vote-form">
+                <label>Award<select id="vote-award" required></select></label>
+                <label>Points (1–10)<input id="vote-points" type="number" min="1" max="10" value="10" required></label>
+                <button class="primary-button" type="submit">Save my points</button>
+                <p id="vote-status" class="form-status" role="status"></p>
+            </form>
+        </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+
+</html>
