@@ -11,7 +11,16 @@ const state = {
     voteTotals: [],
     currentPage: 1,
     itemsPerPage: 8,
+    awardSort: 'asc',
     currentStory: null,
+    commentStory: null,
+    editingStory: null,
+    winnerSlot: null,
+    winnerCandidateIndex: 0,
+    winnerTouchStartX: 0,
+    searchQuery: '',
+    modalScrollY: 0,
+    unlockTimer: null,
     deferredInstallPrompt: null,
     previewUrl: '',
     promptStory: null,
@@ -31,6 +40,14 @@ const fixedImageStyle = [
     'If any person appears, their face must be softly blurred, indistinct, anonymous, and completely unrecognizable; do not create readable facial identity.',
     'Do not include words, letters, captions, logos, watermarks, borders, UI, or readable signs.',
 ].join(' ');
+const iconMarkup = {
+    generate: '<path d="m13 2 1.5 5.5L20 9l-5.5 1.5L13 16l-1.5-5.5L6 9l5.5-1.5L13 2Z" /><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15ZM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14Z" />',
+    upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14" />',
+    points: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z" />',
+    comment: '<path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4.5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" /><path d="M7 10h10M7 13h6" />',
+    edit: '<path d="m4 16.5-.8 3.3 3.3-.8L18.8 6.7a2.1 2.1 0 0 0-3-3L4 16.5Z" /><path d="m14.5 5.5 4 4" />',
+    delete: '<path d="M5 7h14M10 11v5M14 11v5M9 7V4h6v3M7 7l.8 13h8.4L17 7" />',
+};
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -44,6 +61,7 @@ async function init() {
     updatePlacementPreview();
     registerServiceWorker();
     setupInstallPrompt();
+    setupSessionLifecycle();
 
     if (!state.token) {
         showLockScreen();
@@ -51,7 +69,8 @@ async function init() {
     }
 
     document.body.classList.add('session-loading');
-    $('#unlock-status').textContent = 'Opening your private collection...';
+    setAppLoading(true);
+    $('#unlock-status').textContent = 'Restoring your private session...';
     try {
         const collection = await apiRequest('collection');
         unlockApp();
@@ -65,17 +84,55 @@ async function init() {
 
 function bindEvents() {
     $('#unlock-form')?.addEventListener('submit', handleUnlock);
+    $('#toggle-password')?.addEventListener('click', togglePasswordVisibility);
     $('#add-dream-button')?.addEventListener('click', openStoryModal);
     $('#add-award-button')?.addEventListener('click', openAwardModal);
-    $('#manage-winners-button')?.addEventListener('click', openWinnerModal);
+    $('#award-sort')?.addEventListener('change', (event) => {
+        state.awardSort = event.target.value === 'desc' ? 'desc' : 'asc';
+        renderAwards();
+    });
     $('#story-modal-close')?.addEventListener('click', () => closeModal('story-modal'));
+    $('#comment-modal-close')?.addEventListener('click', () => closeModal('comment-modal'));
     $('#prompt-modal-close')?.addEventListener('click', () => closeModal('prompt-modal'));
     $('#image-modal-close')?.addEventListener('click', () => closeModal('image-modal'));
     $('#award-modal-close')?.addEventListener('click', () => closeModal('award-modal'));
     $('#winner-modal-close')?.addEventListener('click', () => closeModal('winner-modal'));
     $('#vote-close')?.addEventListener('click', () => closeModal('vote-modal'));
+    $('#winner-edit-button')?.addEventListener('click', openWinnerEditor);
+    $('#winner-clear-button')?.addEventListener('click', clearWinnerSlot);
+    $('#winner-prev')?.addEventListener('click', () => moveWinnerCandidate(-1));
+    $('#winner-next')?.addEventListener('click', () => moveWinnerCandidate(1));
+    $('#winner-save-button')?.addEventListener('click', saveWinnerSlot);
+    $('#winner-carousel')?.addEventListener('touchstart', (event) => {
+        state.winnerTouchStartX = event.changedTouches[0]?.clientX || 0;
+    }, { passive: true });
+    $('#winner-carousel')?.addEventListener('touchend', (event) => {
+        const endX = event.changedTouches[0]?.clientX || 0;
+        const delta = endX - state.winnerTouchStartX;
+        if (Math.abs(delta) >= 40) moveWinnerCandidate(delta < 0 ? 1 : -1);
+    }, { passive: true });
+    $('#comment-form')?.addEventListener('submit', handleCommentSubmit);
+    $('#story-search-form')?.addEventListener('submit', handleSearchSubmit);
+    $('#story-search-input')?.addEventListener('input', handleSearchInput);
+    $('#story-search-clear')?.addEventListener('click', clearStorySearch);
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            const openModalElement = $('.modal-backdrop:not([hidden])');
+            if (openModalElement) closeModal(openModalElement.id);
+            else hideSearchResults();
+        }
+    });
 
     document.addEventListener('click', (event) => {
+        if (!event.target.closest('.search-form, .search-results')) hideSearchResults();
+
+        const winnerSlot = event.target.closest('[data-winner-slot]');
+        if (winnerSlot) {
+            event.stopPropagation();
+            openWinnerSlot(winnerSlot.dataset.awardId, Number(winnerSlot.dataset.rank));
+            return;
+        }
+
         const sectionButton = event.target.closest('[data-section]');
         if (sectionButton) {
             showSection(sectionButton.dataset.section);
@@ -86,6 +143,27 @@ function bindEvents() {
         if (promptButton) {
             event.stopPropagation();
             openPromptModal(promptButton.dataset.generateStory);
+            return;
+        }
+
+        const commentButton = event.target.closest('[data-comment-story]');
+        if (commentButton) {
+            event.stopPropagation();
+            openCommentModal(commentButton.dataset.commentStory);
+            return;
+        }
+
+        const editButton = event.target.closest('[data-edit-story]');
+        if (editButton) {
+            event.stopPropagation();
+            openEditStory(editButton.dataset.editStory);
+            return;
+        }
+
+        const deleteButton = event.target.closest('[data-delete-story]');
+        if (deleteButton) {
+            event.stopPropagation();
+            deleteStory(deleteButton.dataset.deleteStory);
             return;
         }
 
@@ -106,6 +184,14 @@ function bindEvents() {
         if (voteButton) {
             event.stopPropagation();
             openVoteModal(voteButton.dataset.voteStory);
+            return;
+        }
+
+        const searchResult = event.target.closest('[data-search-story]');
+        if (searchResult) {
+            event.stopPropagation();
+            goToStory(searchResult.dataset.searchStory, Number(searchResult.dataset.searchParagraph));
+            hideSearchResults();
             return;
         }
 
@@ -136,7 +222,6 @@ function bindEvents() {
     $('#story-image-file')?.addEventListener('change', handlePostImageSelection);
     $('#upload-story-image')?.addEventListener('click', handleStoryImageUpload);
     $('#award-form')?.addEventListener('submit', handleAwardSubmit);
-    $('#winner-form')?.addEventListener('submit', handleWinnerSubmit);
     $('#vote-form')?.addEventListener('submit', handleVoteSubmit);
     $('#install-button')?.addEventListener('click', installPwa);
 }
@@ -192,8 +277,19 @@ async function handleUnlock(event) {
     }
 }
 
+function togglePasswordVisibility() {
+    const input = $('#unlock-password');
+    const button = $('#toggle-password');
+    if (!input || !button) return;
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    button.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+    button.title = showing ? 'Show password' : 'Hide password';
+}
+
 function unlockApp() {
     state.unlocked = true;
+    window.clearTimeout(state.unlockTimer);
     document.body.classList.remove('locked', 'session-loading', 'is-unlocking');
     document.body.classList.add('is-unlocked');
     const lockSection = $('#lock-section');
@@ -205,7 +301,7 @@ function unlockApp() {
     $('#add-dream-button').hidden = false;
     $('#install-button').hidden = !state.deferredInstallPrompt;
     $('#unlock-status').textContent = '';
-    window.setTimeout(() => {
+    state.unlockTimer = window.setTimeout(() => {
         lockSection.hidden = true;
         lockSection.removeAttribute('aria-hidden');
         document.body.classList.remove('is-unlocked');
@@ -214,6 +310,8 @@ function unlockApp() {
 
 function showLockScreen() {
     state.unlocked = false;
+    window.clearTimeout(state.unlockTimer);
+    state.unlockTimer = null;
     document.body.classList.add('locked');
     document.body.classList.remove('is-unlocked', 'is-unlocking', 'session-loading');
     $('#lock-section').hidden = false;
@@ -221,6 +319,7 @@ function showLockScreen() {
     $('#private-app').hidden = true;
     $('#main-nav').hidden = true;
     $('#bottom-nav').hidden = true;
+    setAppLoading(false);
 }
 
 function lockApp(message = '') {
@@ -253,7 +352,7 @@ function normalizeStory(story) {
 
 async function loadCollection(showStatus = true) {
     setAppLoading(true);
-    if (showStatus) showDataStatus('Opening your dreambook...');
+    if (showStatus) showDataStatus('Refreshing your dreambook...');
     try {
         const collection = await apiRequest('collection');
         applyCollection(collection);
@@ -269,7 +368,6 @@ function renderAll() {
     renderAwards();
     displayEvents();
     renderStories();
-    populateAdminSelects();
     populatePageChoices();
 }
 
@@ -322,7 +420,10 @@ function renderHomeMarquee() {
         card.className = 'marquee-card';
         card.type = 'button';
         card.dataset.storyLink = story.link;
-        if (index >= firstPlaces.length && firstPlaces.length > 1) card.setAttribute('aria-hidden', 'true');
+        if (index >= firstPlaces.length && firstPlaces.length > 1) {
+            card.setAttribute('aria-hidden', 'true');
+            card.tabIndex = -1;
+        }
         const image = createStoryImage(story, 'marquee-image');
         const label = document.createElement('span');
         label.className = 'marquee-label';
@@ -336,14 +437,12 @@ function renderHomeMarquee() {
 }
 
 function getFirstPlaceItems() {
-    return state.winners
-        .filter((winner) => Number(winner.rank) === 1)
-        .map((winner) => ({
-            winner,
-            award: state.awards.find((item) => item.id === winner.award_id),
-            story: getStory(winner.story_id),
-        }))
-        .filter((item) => item.award && item.story);
+    return orderedAwards()
+        .map((award) => {
+            const winner = state.winners.find((item) => item.award_id === award.id && Number(item.rank) === 1);
+            return winner ? { winner, award, story: getStory(winner.story_id) } : null;
+        })
+        .filter((item) => item?.story);
 }
 
 function renderAwards() {
@@ -355,7 +454,7 @@ function renderAwards() {
         return;
     }
 
-    state.awards.forEach((award) => {
+    orderedAwards().forEach((award) => {
         const group = document.createElement('section');
         group.className = 'category-group';
         const heading = document.createElement('h2');
@@ -382,7 +481,10 @@ function createWinnerCard(story, rank, awardId) {
     const card = document.createElement('button');
     card.className = `winner rank-${rank}`;
     card.type = 'button';
-    if (story) card.dataset.storyLink = story.link;
+    card.dataset.winnerSlot = 'true';
+    card.dataset.awardId = awardId;
+    card.dataset.rank = String(rank);
+    card.setAttribute('aria-label', `${rankLabel(rank)}: ${story?.title || 'Choose a dream'}`);
 
     const frame = document.createElement('span');
     frame.className = 'winner-frame';
@@ -395,7 +497,13 @@ function createWinnerCard(story, rank, awardId) {
     else {
         const empty = document.createElement('span');
         empty.className = 'winner-placeholder';
-        empty.textContent = 'Open slot';
+        const image = document.createElement('img');
+        image.className = 'winner-placeholder-image';
+        image.src = 'somniva_logo.png';
+        image.alt = '';
+        const label = document.createElement('span');
+        label.textContent = 'Choose a dream';
+        empty.append(image, label);
         frame.append(empty);
     }
 
@@ -416,6 +524,152 @@ function createWinnerCard(story, rank, awardId) {
 
     card.append(frame, info);
     return card;
+}
+
+function openWinnerSlot(awardId, rank) {
+    const award = state.awards.find((item) => item.id === awardId);
+    if (!award || ![1, 2, 3].includes(rank)) return;
+    state.winnerSlot = { awardId, rank };
+    state.winnerCandidateIndex = 0;
+    $('#winner-slot-label').textContent = `${award.name} · ${rankLabel(rank)} · ${award.description || 'Choose a dream for this place.'}`;
+    $('#winner-editor').hidden = true;
+    $('#winner-form-status').textContent = '';
+    renderWinnerPreview();
+    openModal('winner-modal');
+    $('#winner-edit-button').focus();
+}
+
+function renderWinnerPreview() {
+    if (!state.winnerSlot) return;
+    const { awardId, rank } = state.winnerSlot;
+    const winner = getWinnerForSlot(awardId, rank);
+    const story = winner ? getStory(winner.story_id) : null;
+    const image = $('#winner-modal-image');
+    image.src = story?.image_url || 'somniva_logo.png';
+    image.alt = story?.title || 'No dream selected';
+    image.classList.toggle('image-fallback', !story?.image_url);
+    $('#winner-modal-title').textContent = story?.title || 'No dream selected';
+    $('#winner-modal-link').textContent = story ? `${story.link} · ${formatDate(story.dream_date)}` : 'This place is ready for a dream.';
+    $('#winner-clear-button').disabled = !story;
+}
+
+function openWinnerEditor() {
+    if (!state.winnerSlot) return;
+    const current = getWinnerForSlot(state.winnerSlot.awardId, state.winnerSlot.rank);
+    const candidates = getWinnerCandidates();
+    const currentIndex = current ? candidates.findIndex((story) => story.id === current.story_id) : -1;
+    const availableIndex = candidates.findIndex((story) => winnerCandidateIsAvailable(story));
+    state.winnerCandidateIndex = currentIndex >= 0 ? currentIndex : Math.max(availableIndex, 0);
+    $('#winner-editor').hidden = false;
+    $('#winner-form-status').textContent = '';
+    renderWinnerCandidate();
+}
+
+function getWinnerCandidates() {
+    return sortByTitle(state.stories);
+}
+
+function getWinnerForSlot(awardId, rank) {
+    return state.winners.find((winner) => winner.award_id === awardId && Number(winner.rank) === rank);
+}
+
+function getWinnerAssignment(awardId, storyId) {
+    return state.winners.find((winner) => winner.award_id === awardId && winner.story_id === storyId);
+}
+
+function winnerCandidateIsAvailable(story) {
+    if (!state.winnerSlot) return false;
+    const assignment = getWinnerAssignment(state.winnerSlot.awardId, story.id);
+    return !assignment || Number(assignment.rank) === state.winnerSlot.rank;
+}
+
+function renderWinnerCandidate() {
+    const candidates = getWinnerCandidates();
+    const image = $('#winner-carousel-image');
+    const title = $('#winner-carousel-title');
+    const link = $('#winner-carousel-link');
+    const status = $('#winner-carousel-status');
+    const saveButton = $('#winner-save-button');
+    if (!candidates.length) {
+        image.src = 'somniva_logo.png';
+        image.alt = 'No dreams available';
+        title.textContent = 'No dreams available';
+        link.textContent = '';
+        status.textContent = 'Create a dream before assigning this place.';
+        saveButton.disabled = true;
+        return;
+    }
+
+    state.winnerCandidateIndex = (state.winnerCandidateIndex + candidates.length) % candidates.length;
+    const story = candidates[state.winnerCandidateIndex];
+    const assignment = getWinnerAssignment(state.winnerSlot.awardId, story.id);
+    const available = winnerCandidateIsAvailable(story);
+    image.src = story.image_url || 'somniva_logo.png';
+    image.alt = story.title;
+    image.classList.toggle('image-fallback', !story.image_url);
+    title.textContent = story.title;
+    link.textContent = `${story.link} · ${formatDate(story.dream_date)}`;
+    status.textContent = available
+        ? 'Available for this place.'
+        : `Already selected for ${rankLabel(assignment.rank)} in this award.`;
+    status.classList.toggle('is-unavailable', !available);
+    saveButton.disabled = !available;
+}
+
+function moveWinnerCandidate(direction) {
+    const candidates = getWinnerCandidates();
+    if (!candidates.length) return;
+    state.winnerCandidateIndex += direction;
+    renderWinnerCandidate();
+}
+
+async function saveWinnerSlot() {
+    if (!state.winnerSlot) return;
+    const candidates = getWinnerCandidates();
+    const story = candidates[state.winnerCandidateIndex];
+    if (!story || !winnerCandidateIsAvailable(story)) return;
+    const button = $('#winner-save-button');
+    const status = $('#winner-form-status');
+    status.textContent = 'Saving podium place...';
+    setButtonLoading(button, true);
+    try {
+        await apiRequest('set-winner', {
+            award_id: state.winnerSlot.awardId,
+            story_id: story.id,
+            rank: state.winnerSlot.rank,
+        });
+        closeModal('winner-modal');
+        showToast('Hall of Fame updated.');
+        await loadCollection(false);
+    } catch (error) {
+        status.textContent = error.message || 'Unable to update the podium.';
+    } finally {
+        setButtonLoading(button, false);
+    }
+}
+
+async function clearWinnerSlot() {
+    if (!state.winnerSlot || !getWinnerForSlot(state.winnerSlot.awardId, state.winnerSlot.rank)) return;
+    if (!window.confirm('Clear this Hall of Fame place?')) return;
+    const button = $('#winner-clear-button');
+    setButtonLoading(button, true);
+    try {
+        await apiRequest('remove-winner', {
+            award_id: state.winnerSlot.awardId,
+            rank: state.winnerSlot.rank,
+        });
+        closeModal('winner-modal');
+        showToast('Hall of Fame place cleared.');
+        await loadCollection(false);
+    } catch (error) {
+        $('#winner-form-status').textContent = error.message || 'Unable to clear the podium place.';
+    } finally {
+        setButtonLoading(button, false);
+    }
+}
+
+function rankLabel(rank) {
+    return `Top ${rank}`;
 }
 
 function displayEvents() {
@@ -508,26 +762,14 @@ function createStoryArticle(story) {
     storyLabel.textContent = story.link;
     const actions = document.createElement('div');
     actions.className = 'story-actions';
-    const promptButton = document.createElement('button');
-    promptButton.className = 'story-tool-button prompt-tool';
-    promptButton.type = 'button';
-    promptButton.dataset.generateStory = story.id;
-    promptButton.textContent = 'Generate';
-    actions.append(promptButton);
-
-    const coverButton = document.createElement('button');
-    coverButton.className = 'story-tool-button upload-tool';
-    coverButton.type = 'button';
-    coverButton.dataset.uploadStory = story.id;
-    coverButton.textContent = story.image_path ? 'Replace photo' : 'Upload photo';
-    actions.append(coverButton);
-
-    const vote = document.createElement('button');
-    vote.className = 'vote-button story-tool-button';
-    vote.type = 'button';
-    vote.dataset.voteStory = story.id;
-    vote.textContent = 'Give points';
-    actions.append(vote);
+    actions.append(
+        createStoryToolButton('generate', 'Generate image prompt', 'generateStory', story.id, 'prompt-tool'),
+        createStoryToolButton('upload', story.image_path ? 'Replace photo' : 'Upload photo', 'uploadStory', story.id, 'upload-tool'),
+        createStoryToolButton('points', 'Give points', 'voteStory', story.id, 'vote-tool'),
+        createStoryToolButton('comment', 'Add comment', 'commentStory', story.id, 'comment-tool'),
+        createStoryToolButton('edit', 'Edit story', 'editStory', story.id, 'edit-tool'),
+        createStoryToolButton('delete', 'Delete story', 'deleteStory', story.id, 'delete-tool'),
+    );
     topLine.append(storyLabel, actions);
 
     const picture = document.createElement('div');
@@ -539,8 +781,10 @@ function createStoryArticle(story) {
     date.textContent = formatDate(story.dream_date);
     const paragraphs = document.createElement('div');
     paragraphs.className = 'story-paragraphs';
-    story.paragraphs.forEach((content) => {
+    story.paragraphs.forEach((content, index) => {
         const paragraph = document.createElement('p');
+        paragraph.id = `${story.link}-paragraph-${index}`;
+        paragraph.dataset.storyParagraph = String(index);
         paragraph.innerHTML = sanitizeHtml(content);
         paragraphs.append(paragraph);
     });
@@ -550,7 +794,7 @@ function createStoryArticle(story) {
         const commentCard = document.createElement('div');
         commentCard.className = 'comment';
         const commentDate = document.createElement('h3');
-        commentDate.textContent = comment.date || 'Comment';
+        commentDate.textContent = formatCommentDate(comment.date);
         commentCard.append(commentDate);
         (comment.paragraphs || []).forEach((content) => {
             const paragraph = document.createElement('p');
@@ -561,6 +805,17 @@ function createStoryArticle(story) {
     });
 
     return article;
+}
+
+function createStoryToolButton(icon, label, dataKey, storyId, extraClass = '') {
+    const button = document.createElement('button');
+    button.className = `story-tool-button ${extraClass}`.trim();
+    button.type = 'button';
+    button.dataset[dataKey] = storyId;
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    button.innerHTML = `<svg class="story-tool-icon" viewBox="0 0 24 24" aria-hidden="true">${iconMarkup[icon]}</svg><span class="visually-hidden">${label}</span>`;
+    return button;
 }
 
 function createStoryImage(story, className) {
@@ -614,31 +869,11 @@ async function handleVoteSubmit(event) {
 function populateVoteAwards() {
     const select = $('#vote-award');
     select.replaceChildren();
-    state.awards.filter((award) => award.active !== false).forEach((award) => {
+    orderedAwards().filter((award) => award.active !== false).forEach((award) => {
         const option = document.createElement('option');
         option.value = award.id;
         option.textContent = award.name;
         select.append(option);
-    });
-}
-
-function populateAdminSelects() {
-    const awardSelect = $('#winner-award');
-    const storySelect = $('#winner-story');
-    if (!awardSelect || !storySelect) return;
-    awardSelect.replaceChildren();
-    state.awards.forEach((award) => {
-        const option = document.createElement('option');
-        option.value = award.id;
-        option.textContent = award.name;
-        awardSelect.append(option);
-    });
-    storySelect.replaceChildren();
-    sortByTitle(state.stories).forEach((story) => {
-        const option = document.createElement('option');
-        option.value = story.id;
-        option.textContent = `${story.title} · ${story.link}`;
-        storySelect.append(option);
     });
 }
 
@@ -713,24 +948,26 @@ async function handleStorySubmit(event) {
         return;
     }
 
-    status.textContent = 'Creating the dream...';
+    const editing = state.editingStory;
+    status.textContent = editing ? 'Saving changes...' : 'Creating the dream...';
     const submitButton = $('#story-form button[type="submit"]');
     setButtonLoading(submitButton, true);
     const form = new FormData();
     form.append('title', title);
-    form.append('page_number', selectedPage);
+    if (editing) form.append('story_id', editing.id);
+    else form.append('page_number', selectedPage);
     form.append('dream_date', dreamDate);
     form.append('paragraphs', JSON.stringify(paragraphs));
 
     try {
-        const created = await apiRequest('save-story', form);
+        const saved = await apiRequest(editing ? 'update-story' : 'save-story', form);
         resetStoryModal();
         closeModal('story-modal');
-        showToast(`Dream created as ${created.link}.`);
+        showToast(editing ? 'Dream updated.' : `Dream created as ${saved.link}.`);
         status.textContent = '';
         await loadCollection(false);
     } catch (error) {
-        status.textContent = error.message || 'Unable to create the dream.';
+        status.textContent = error.message || (editing ? 'Unable to update the dream.' : 'Unable to create the dream.');
     } finally {
         setButtonLoading(submitButton, false);
     }
@@ -746,10 +983,8 @@ async function handleAwardSubmit(event) {
         await apiRequest('save-award', {
             name: $('#award-name').value.trim(),
             description: $('#award-description').value.trim(),
-            display_order: Number($('#award-order').value),
         });
         $('#award-form').reset();
-        $('#award-order').value = String(state.awards.length + 1);
         closeModal('award-modal');
         showToast('Award added.');
         await loadCollection(false);
@@ -760,25 +995,44 @@ async function handleAwardSubmit(event) {
     }
 }
 
-async function handleWinnerSubmit(event) {
+async function handleCommentSubmit(event) {
     event.preventDefault();
-    const status = $('#winner-form-status');
-    const submitButton = $('#winner-form button[type="submit"]');
-    status.textContent = 'Saving winner...';
+    if (!state.commentStory) return;
+    const status = $('#comment-form-status');
+    const submitButton = $('#comment-form button[type="submit"]');
+    const date = $('#comment-date').value;
+    const comment = $('#comment-text').value.trim();
+    if (!date || !comment) {
+        status.textContent = 'Add a date and comment first.';
+        return;
+    }
+    status.textContent = 'Saving comment...';
     setButtonLoading(submitButton, true);
     try {
-        await apiRequest('set-winner', {
-            award_id: $('#winner-award').value,
-            story_id: $('#winner-story').value,
-            rank: Number($('#winner-rank').value),
+        await apiRequest('save-story-comment', {
+            story_id: state.commentStory.id,
+            comment_date: date,
+            comment,
         });
-        closeModal('winner-modal');
-        showToast('Hall of Fame updated.');
+        closeModal('comment-modal');
+        showToast('Comment added.');
         await loadCollection(false);
     } catch (error) {
-        status.textContent = error.message;
+        status.textContent = error.message || 'Unable to save the comment.';
     } finally {
         setButtonLoading(submitButton, false);
+    }
+}
+
+async function deleteStory(storyId) {
+    const story = getStory(storyId);
+    if (!story || !window.confirm(`Delete "${story.title}" permanently?`)) return;
+    try {
+        await apiRequest('delete-story', { story_id: story.id });
+        showToast('Dream deleted.');
+        await loadCollection(false);
+    } catch (error) {
+        showToast(error.message || 'Unable to delete the dream.');
     }
 }
 
@@ -915,27 +1169,62 @@ function openImageUpload(storyId) {
 }
 
 function openStoryModal() {
+    state.editingStory = null;
     resetStoryModal();
+    $('#story-modal-kicker').textContent = 'Owner workspace';
+    $('#story-modal-heading').textContent = 'Add a dream';
+    $('#story-modal-intro').textContent = 'Write the moment first. Give it an image when the right one exists.';
+    $('#story-submit-label').textContent = 'Create dream';
     openModal('story-modal');
 }
 
+function openEditStory(storyId) {
+    const story = getStory(storyId);
+    if (!story) return;
+    resetStoryModal();
+    state.editingStory = story;
+    $('#story-title').value = story.title;
+    $('#story-date').value = story.dream_date;
+    $('#paragraph-list').replaceChildren();
+    story.paragraphs.forEach((paragraph) => addParagraphRow(paragraph));
+    if (!story.paragraphs.length) addParagraphRow();
+    $('#story-page-field').hidden = true;
+    $('#story-placement-preview').hidden = true;
+    $('#story-modal-kicker').textContent = 'Owner workspace';
+    $('#story-modal-heading').textContent = 'Edit dream';
+    $('#story-modal-intro').textContent = 'Refine the title, date, or paragraphs without changing its place in the dreambook.';
+    $('#story-submit-label').textContent = 'Save changes';
+    openModal('story-modal');
+    $('#story-title').focus();
+}
+
+function openCommentModal(storyId) {
+    const story = getStory(storyId);
+    if (!story) return;
+    state.commentStory = story;
+    $('#comment-story-title').textContent = `${story.title} · ${story.link}`;
+    $('#comment-date').value = new Date().toISOString().slice(0, 10);
+    $('#comment-text').value = '';
+    $('#comment-form-status').textContent = '';
+    openModal('comment-modal');
+    $('#comment-text').focus();
+}
+
 function openAwardModal() {
-    $('#award-order').value = String(state.awards.length + 1);
+    $('#award-form').reset();
+    $('#award-form-status').textContent = '';
     openModal('award-modal');
     $('#award-name').focus();
 }
 
-function openWinnerModal() {
-    populateAdminSelects();
-    openModal('winner-modal');
-    $('#winner-award').focus();
-}
-
 function resetStoryModal() {
+    state.editingStory = null;
     $('#story-form').reset();
     $('#paragraph-list').replaceChildren();
     addParagraphRow();
     $('#story-form-status').textContent = '';
+    $('#story-page-field').hidden = false;
+    $('#story-placement-preview').hidden = false;
     setDefaultDate();
     populatePageChoices();
 }
@@ -943,6 +1232,14 @@ function resetStoryModal() {
 function openModal(id) {
     const modal = document.getElementById(id);
     if (!modal) return;
+    const alreadyOpen = $$('.modal-backdrop:not([hidden])').length > 0;
+    $$('.modal-backdrop:not([hidden])').forEach((openModalElement) => {
+        if (openModalElement.id !== id) closeModal(openModalElement.id);
+    });
+    if (!alreadyOpen) {
+        state.modalScrollY = window.scrollY;
+        document.body.style.top = `-${state.modalScrollY}px`;
+    }
     modal.hidden = false;
     document.body.classList.add('modal-open');
 }
@@ -951,9 +1248,15 @@ function closeModal(id) {
     const modal = document.getElementById(id);
     if (!modal) return;
     modal.hidden = true;
-    if (!$$('.modal-backdrop:not([hidden])').length) document.body.classList.remove('modal-open');
+    if (!$$('.modal-backdrop:not([hidden])').length) {
+        document.body.classList.remove('modal-open');
+        document.body.style.top = '';
+        window.scrollTo(0, state.modalScrollY);
+    }
     if (id === 'vote-modal') state.currentStory = null;
+    if (id === 'comment-modal') state.commentStory = null;
     if (id === 'prompt-modal') state.promptStory = null;
+    if (id === 'winner-modal') state.winnerSlot = null;
     if (id === 'image-modal') {
         state.imageStory = null;
         if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
@@ -964,9 +1267,14 @@ function closeModal(id) {
 function closeAllModals() {
     $$('.modal-backdrop').forEach((modal) => { modal.hidden = true; });
     document.body.classList.remove('modal-open');
+    document.body.style.top = '';
+    window.scrollTo(0, state.modalScrollY);
     state.currentStory = null;
+    state.commentStory = null;
     state.promptStory = null;
     state.imageStory = null;
+    state.editingStory = null;
+    state.winnerSlot = null;
     if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
     state.previewUrl = '';
 }
@@ -982,9 +1290,136 @@ function showSection(sectionId) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function goToStory(link) {
+function goToStory(link, paragraphIndex = null) {
     showSection('stories-section');
-    window.setTimeout(() => document.getElementById(link)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 20);
+    window.setTimeout(() => {
+        const story = document.getElementById(link);
+        if (!story) return;
+        const target = Number.isInteger(paragraphIndex) && paragraphIndex >= 0
+            ? document.getElementById(`${link}-paragraph-${paragraphIndex}`) || story
+            : story;
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (target !== story) {
+            target.classList.add('search-hit');
+            const mark = highlightSearchMatch(target, state.searchQuery);
+            window.setTimeout(() => {
+                target.classList.remove('search-hit');
+                if (mark?.parentNode) mark.parentNode.replaceChild(document.createTextNode(mark.textContent), mark);
+            }, 2200);
+        }
+    }, 40);
+}
+
+function highlightSearchMatch(element, query) {
+    const needle = String(query || '').toLocaleLowerCase();
+    if (!needle) return null;
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+        const index = node.textContent.toLocaleLowerCase().indexOf(needle);
+        if (index < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, index);
+        range.setEnd(node, index + needle.length);
+        const mark = document.createElement('mark');
+        mark.className = 'search-mark';
+        range.surroundContents(mark);
+        return mark;
+    }
+    return null;
+}
+
+function handleSearchInput(event) {
+    state.searchQuery = event.target.value.trim();
+    renderSearchResults();
+}
+
+function handleSearchSubmit(event) {
+    event.preventDefault();
+    state.searchQuery = $('#story-search-input').value.trim();
+    const results = findSearchResults(state.searchQuery);
+    if (results.length) {
+        goToStory(results[0].story.link, results[0].paragraphIndex);
+        hideSearchResults();
+    } else {
+        renderSearchResults();
+    }
+}
+
+function clearStorySearch() {
+    $('#story-search-input').value = '';
+    state.searchQuery = '';
+    hideSearchResults();
+}
+
+function renderSearchResults() {
+    const container = $('#story-search-results');
+    if (!container) return;
+    const results = findSearchResults(state.searchQuery);
+    container.replaceChildren();
+    if (!state.searchQuery) {
+        container.hidden = true;
+        return;
+    }
+    if (!results.length) {
+        const empty = document.createElement('p');
+        empty.className = 'search-empty';
+        empty.textContent = 'No matching dream sentence.';
+        container.append(empty);
+    } else {
+        results.forEach((result) => {
+            const button = document.createElement('button');
+            button.className = 'search-result';
+            button.type = 'button';
+            button.dataset.searchStory = result.story.link;
+            button.dataset.searchParagraph = String(result.paragraphIndex);
+            const title = document.createElement('strong');
+            title.textContent = `${result.story.title} · ${result.story.link}`;
+            const snippet = document.createElement('span');
+            snippet.textContent = result.snippet;
+            button.append(title, snippet);
+            container.append(button);
+        });
+    }
+    container.hidden = false;
+}
+
+function hideSearchResults() {
+    const container = $('#story-search-results');
+    if (container) container.hidden = true;
+}
+
+function findSearchResults(query) {
+    const needle = String(query || '').toLocaleLowerCase().trim();
+    if (!needle) return [];
+    const results = [];
+    sortByTitle(state.stories).forEach((story) => {
+        const titleText = `${story.title} ${story.link}`;
+        if (titleText.toLocaleLowerCase().includes(needle)) {
+            results.push({ story, paragraphIndex: -1, snippet: `${story.title} · ${story.link}` });
+        }
+        story.paragraphs.forEach((paragraph, index) => {
+            const text = plainText(paragraph);
+            const matchIndex = text.toLocaleLowerCase().indexOf(needle);
+            if (matchIndex >= 0) results.push({ story, paragraphIndex: index, snippet: sentenceAroundMatch(text, matchIndex) });
+        });
+        story.comments.forEach((comment) => {
+            (comment.paragraphs || []).forEach((paragraph) => {
+                const text = plainText(paragraph);
+                const matchIndex = text.toLocaleLowerCase().indexOf(needle);
+                if (matchIndex >= 0) results.push({ story, paragraphIndex: -1, snippet: `Comment: ${sentenceAroundMatch(text, matchIndex)}` });
+            });
+        });
+    });
+    return results.slice(0, 12);
+}
+
+function sentenceAroundMatch(text, matchIndex) {
+    const start = Math.max(text.lastIndexOf('.', matchIndex), text.lastIndexOf('!', matchIndex), text.lastIndexOf('?', matchIndex), text.lastIndexOf('\n', matchIndex)) + 1;
+    const endCandidates = [text.indexOf('.', matchIndex), text.indexOf('!', matchIndex), text.indexOf('?', matchIndex)].filter((index) => index >= 0);
+    const end = endCandidates.length ? Math.min(...endCandidates) + 1 : text.length;
+    const sentence = text.slice(start, end).trim();
+    return sentence.length > 180 ? `${sentence.slice(0, 177)}...` : sentence;
 }
 
 function setupInstallPrompt() {
@@ -997,6 +1432,13 @@ function setupInstallPrompt() {
         state.deferredInstallPrompt = null;
         $('#install-button').hidden = true;
         showToast('Somniva was installed.');
+    });
+}
+
+function setupSessionLifecycle() {
+    window.addEventListener('pageshow', (event) => {
+        if (!event.persisted || !state.token || !state.unlocked) return;
+        loadCollection(false).catch(() => lockApp('Your private session expired. Unlock Somniva again.'));
     });
 }
 
@@ -1026,6 +1468,11 @@ function sortByTitle(stories) {
     return [...stories].sort((a, b) => titleCollator.compare(a.title, b.title));
 }
 
+function orderedAwards() {
+    const awards = [...state.awards].sort((a, b) => Number(a.display_order) - Number(b.display_order) || titleCollator.compare(a.name, b.name));
+    return state.awardSort === 'desc' ? awards.reverse() : awards;
+}
+
 function getStory(id) {
     return state.stories.find((story) => story.id === id);
 }
@@ -1033,6 +1480,10 @@ function getStory(id) {
 function formatDate(value) {
     if (!value) return 'Date unknown';
     return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function formatCommentDate(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? formatDate(value) : (value || 'Comment');
 }
 
 function plainText(value) {

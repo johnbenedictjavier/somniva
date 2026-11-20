@@ -48,9 +48,12 @@ The function uses Supabase's server-side `SUPABASE_SERVICE_ROLE_KEY` automatical
 4. Create the dream without an image.
 5. From the dream's story card, choose **Generate** to create and copy the fixed Somniva prompt.
 6. Use **Upload photo** beside the story to add or replace its private cover image later.
-7. The copied prompt and uploaded image are stored in private Supabase records/storage.
+7. Use the story card icons to add comments, edit the dream, or permanently delete it.
+8. The copied prompt, comments, and uploaded image are stored in private Supabase records/storage.
 
 The generator always uses the same cinematic surreal dream-journal style: indigo, violet, midnight blue, moonlight, symbolic atmosphere, painterly realism, softly blurred unrecognizable faces, and no text or watermarks.
+
+Hall of Fame podium places are edited directly from their cards. Each award category can use a dream only once across Top 1, Top 2, and Top 3. New awards receive their position automatically; the Hall of Fame screen provides first-to-last and last-to-first viewing order.
 
 ## Frontend Configuration
 

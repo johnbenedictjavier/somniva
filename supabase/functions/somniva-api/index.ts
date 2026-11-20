@@ -212,6 +212,24 @@ async function saveStory(request: Request) {
     return insert.data;
 }
 
+async function updateStory(request: Request) {
+    const form = await request.formData();
+    const storyId = requiredText(form.get('story_id'), 'Story', 80);
+    const title = requiredText(form.get('title'), 'Title', 180);
+    const dreamDate = requiredText(form.get('dream_date'), 'Dream date', 20);
+    const paragraphs = JSON.parse(String(form.get('paragraphs') ?? '[]'));
+    if (!Array.isArray(paragraphs) || !paragraphs.length) throw new Error('At least one paragraph is required.');
+
+    const cleanParagraphs = paragraphs.map((paragraph) => requiredText(paragraph, 'Paragraph', 20000));
+    const result = await admin.from('SM_stories')
+        .update({ title, dream_date: dreamDate, paragraphs: cleanParagraphs, updated_at: new Date().toISOString() })
+        .eq('id', storyId)
+        .select('*')
+        .single();
+    if (result.error) throw result.error;
+    return result.data;
+}
+
 async function uploadStoryImage(request: Request) {
     const form = await request.formData();
     const storyId = requiredText(form.get('story_id'), 'Story', 80);
@@ -259,32 +277,98 @@ async function saveStoryPrompt(body: Record<string, unknown>) {
     return result.data;
 }
 
+async function saveStoryComment(body: Record<string, unknown>) {
+    const storyId = requiredText(body.story_id, 'Story', 80);
+    const commentDate = requiredText(body.comment_date, 'Comment date', 80);
+    const comment = requiredText(body.comment, 'Comment', 20000);
+    const existing = await admin.from('SM_stories').select('comments').eq('id', storyId).single();
+    if (existing.error) throw existing.error;
+
+    const comments = Array.isArray(existing.data.comments) ? existing.data.comments : [];
+    comments.push({ date: commentDate, paragraphs: [comment] });
+    const result = await admin.from('SM_stories')
+        .update({ comments, updated_at: new Date().toISOString() })
+        .eq('id', storyId)
+        .select('*')
+        .single();
+    if (result.error) throw result.error;
+    return result.data;
+}
+
+async function deleteStory(body: Record<string, unknown>) {
+    const storyId = requiredText(body.story_id, 'Story', 80);
+    const existing = await admin.from('SM_stories').select('id, image_path').eq('id', storyId).single();
+    if (existing.error) throw existing.error;
+
+    const result = await admin.from('SM_stories').delete().eq('id', storyId);
+    if (result.error) throw result.error;
+    if (existing.data.image_path) {
+        const cleanup = await admin.storage.from(imageBucket).remove([existing.data.image_path]);
+        if (cleanup.error) console.error('Unable to remove deleted story image', cleanup.error);
+    }
+    return { deleted: true, story_id: storyId };
+}
+
+async function setWinner(body: Record<string, unknown>) {
+    const awardId = requiredText(body.award_id, 'Award', 80);
+    const storyId = requiredText(body.story_id, 'Story', 80);
+    const rank = Number(body.rank);
+    if (![1, 2, 3].includes(rank)) throw new Error('Winner rank is invalid.');
+
+    const [award, story, currentAssignment] = await Promise.all([
+        admin.from('SM_awards').select('id, active').eq('id', awardId).single(),
+        admin.from('SM_stories').select('id, published').eq('id', storyId).single(),
+        admin.from('SM_award_winners').select('rank').eq('award_id', awardId).eq('story_id', storyId).maybeSingle(),
+    ]);
+    if (award.error) throw award.error;
+    if (story.error) throw story.error;
+    if (award.data.active === false) throw new Error('This award is inactive.');
+    if (story.data.published === false) throw new Error('This dream is not published.');
+    if (currentAssignment.error) throw currentAssignment.error;
+    if (currentAssignment.data && Number(currentAssignment.data.rank) !== rank) {
+        throw new Error('This dream already has another place in this award.');
+    }
+
+    const result = await admin.from('SM_award_winners')
+        .upsert({ award_id: awardId, story_id: storyId, rank }, { onConflict: 'award_id,rank' })
+        .select('*')
+        .single();
+    if (result.error) throw result.error;
+    return result.data;
+}
+
+async function removeWinner(body: Record<string, unknown>) {
+    const awardId = requiredText(body.award_id, 'Award', 80);
+    const rank = Number(body.rank);
+    if (![1, 2, 3].includes(rank)) throw new Error('Winner rank is invalid.');
+    const result = await admin.from('SM_award_winners').delete().eq('award_id', awardId).eq('rank', rank);
+    if (result.error) throw result.error;
+    return { deleted: true, award_id: awardId, rank };
+}
+
 async function handleAction(action: string, request: Request, body: Record<string, unknown>) {
     // Keep the previous action name valid while installed PWAs receive the new shell.
     if (action === 'collection' || action === 'archive') return collectionPayload();
     if (action === 'save-story') return saveStory(request);
+    if (action === 'update-story') return updateStory(request);
     if (action === 'upload-story-image') return uploadStoryImage(request);
     if (action === 'save-story-prompt') return saveStoryPrompt(body);
+    if (action === 'save-story-comment') return saveStoryComment(body);
+    if (action === 'delete-story') return deleteStory(body);
+    if (action === 'set-winner') return setWinner(body);
+    if (action === 'remove-winner') return removeWinner(body);
 
     if (action === 'save-award') {
         const name = requiredText(body.name, 'Award name', 100);
         const description = typeof body.description === 'string' ? body.description.trim().slice(0, 1000) : '';
-        const displayOrder = Number(body.display_order);
-        if (!Number.isInteger(displayOrder) || displayOrder < 0) throw new Error('Award order is invalid.');
+        const latest = await admin.from('SM_awards')
+            .select('display_order')
+            .order('display_order', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (latest.error) throw latest.error;
+        const displayOrder = (Number(latest.data?.display_order) || 0) + 1;
         const result = await admin.from('SM_awards').insert({ name, description, display_order: displayOrder, active: true }).select('*').single();
-        if (result.error) throw result.error;
-        return result.data;
-    }
-
-    if (action === 'set-winner') {
-        const awardId = requiredText(body.award_id, 'Award', 80);
-        const storyId = requiredText(body.story_id, 'Story', 80);
-        const rank = Number(body.rank);
-        if (![1, 2, 3].includes(rank)) throw new Error('Winner rank is invalid.');
-        const result = await admin.from('SM_award_winners')
-            .upsert({ award_id: awardId, story_id: storyId, rank }, { onConflict: 'award_id,rank' })
-            .select('*')
-            .single();
         if (result.error) throw result.error;
         return result.data;
     }

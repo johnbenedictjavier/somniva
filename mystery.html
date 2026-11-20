@@ -29,6 +29,13 @@
             <small>The Mystery</small>
         </button>
         <div class="nav-actions">
+            <form id="story-search-form" class="search-form" role="search">
+                <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 5 5" /></svg>
+                <label class="visually-hidden" for="story-search-input">Search stories</label>
+                <input id="story-search-input" type="search" placeholder="Search stories" autocomplete="off">
+                <button id="story-search-clear" class="field-action search-clear" type="button" aria-label="Clear story search" title="Clear search">&times;</button>
+            </form>
+            <div id="story-search-results" class="search-results" hidden></div>
             <button id="add-dream-button" class="primary-button top-action" type="button">
                 <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
                 <span>Add dream</span>
@@ -48,7 +55,12 @@
                 <form id="unlock-form" class="unlock-form">
                     <label for="unlock-password">Somniva password</label>
                     <div class="unlock-row">
-                        <input id="unlock-password" type="password" autocomplete="current-password" placeholder="Enter password" required>
+                        <div class="password-field">
+                            <input id="unlock-password" type="password" autocomplete="current-password" placeholder="Enter password" required>
+                            <button id="toggle-password" class="field-action" type="button" aria-label="Show password" title="Show password">
+                                <svg class="field-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /></svg>
+                            </button>
+                        </div>
                         <button class="primary-button" type="submit">Unlock</button>
                     </div>
                     <p id="unlock-status" class="form-status" role="status"></p>
@@ -59,7 +71,7 @@
         <div id="private-app" hidden>
             <div id="app-loading" class="app-loading" hidden aria-live="polite">
                 <div class="loading-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
-                <p>Opening Somniva...</p>
+                <p class="visually-hidden">Loading private collection</p>
             </div>
             <section id="home-section" class="app-section active">
                 <div class="home-shell">
@@ -79,6 +91,10 @@
                                 <span>Hall of Fame</span>
                             </button>
                         </div>
+                        <div class="hero-marquee">
+                            <div class="card-kicker">A moving constellation</div>
+                            <div id="home-winners" class="marquee-viewport loading-copy">Loading the chosen dreams...</div>
+                        </div>
                         <div id="data-status" class="status-message" role="status" hidden></div>
                     </div>
 
@@ -86,11 +102,6 @@
                         <article id="recent-dream-card" class="glass-panel feature-card depth-card">
                             <div class="card-kicker">Latest dream</div>
                             <div id="recent-dream-content" class="loading-copy">Loading the latest dream...</div>
-                        </article>
-                        <article id="home-winners-card" class="glass-panel feature-card feature-card-wide depth-card">
-                            <div class="card-kicker">A moving constellation</div>
-                            <h2>Hall of Fame</h2>
-                            <div id="home-winners" class="marquee-viewport loading-copy">Loading the chosen dreams...</div>
                         </article>
                     </div>
                 </div>
@@ -107,10 +118,12 @@
                                 <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
                                 <span>Add award</span>
                             </button>
-                            <button id="manage-winners-button" class="ghost-button" type="button">
-                                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="8" cy="6" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="11" cy="18" r="1" /></svg>
-                                <span>Set winners</span>
-                            </button>
+                            <label class="award-sort-control">Order
+                                <select id="award-sort" aria-label="Arrange awards">
+                                    <option value="asc">First to last</option>
+                                    <option value="desc">Last to first</option>
+                                </select>
+                            </label>
                         </div>
                     </div>
                     <div id="awards-container" class="awards-container"></div>
@@ -165,16 +178,16 @@
         <div class="modal-card modal-card-wide glass-panel" role="dialog" aria-modal="true" aria-labelledby="story-modal-heading">
             <button id="story-modal-close" class="icon-button modal-close" type="button" aria-label="Close add dream dialog">&times;</button>
             <div class="modal-heading">
-                <div class="eyebrow">Owner workspace</div>
+                <div id="story-modal-kicker" class="eyebrow">Owner workspace</div>
                 <h2 id="story-modal-heading">Add a dream</h2>
-                <p class="modal-intro">Write the moment first. Give it an image when the right one exists.</p>
+                <p id="story-modal-intro" class="modal-intro">Write the moment first. Give it an image when the right one exists.</p>
             </div>
 
             <form id="story-form" class="editor-form">
                 <div class="form-grid">
                     <label>Dream title *<input id="story-title" type="text" required maxlength="180" autocomplete="off"></label>
                     <label>Dream date *<input id="story-date" type="date" required></label>
-                    <label class="full-field">Add to an existing page <select id="story-page-choice"><option value="">New page automatically</option></select></label>
+                    <label id="story-page-field" class="full-field">Add to an existing page <select id="story-page-choice"><option value="">New page automatically</option></select></label>
                 </div>
                 <p id="story-placement-preview" class="placement-preview" role="status"></p>
 
@@ -185,8 +198,27 @@
                 <div id="paragraph-list" class="paragraph-list"></div>
 
                 <div class="form-actions modal-form-actions">
-                    <button class="primary-button" type="submit">Create dream</button>
+                    <button id="story-submit-button" class="primary-button" type="submit"><span id="story-submit-label">Create dream</span></button>
                     <span id="story-form-status" class="form-status" role="status"></span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="comment-modal" class="modal-backdrop" hidden>
+        <div class="modal-card modal-card-wide glass-panel" role="dialog" aria-modal="true" aria-labelledby="comment-heading">
+            <button id="comment-modal-close" class="icon-button modal-close" type="button" aria-label="Close comment dialog">&times;</button>
+            <div class="modal-heading">
+                <div class="eyebrow">Story note</div>
+                <h2 id="comment-heading">Add a comment</h2>
+                <p id="comment-story-title" class="modal-intro"></p>
+            </div>
+            <form id="comment-form" class="compact-form">
+                <label>Comment date *<input id="comment-date" type="date" required></label>
+                <label>Comment *<textarea id="comment-text" rows="7" required maxlength="20000" placeholder="Write a note about this dream..."></textarea></label>
+                <div class="form-actions modal-form-actions">
+                    <button class="primary-button" type="submit">Save comment</button>
+                    <span id="comment-form-status" class="form-status" role="status"></span>
                 </div>
             </form>
         </div>
@@ -242,7 +274,6 @@
             </div>
             <form id="award-form" class="compact-form">
                 <label>Award name *<input id="award-name" type="text" required maxlength="100"></label>
-                <label>Display order *<input id="award-order" type="number" min="0" value="1" required></label>
                 <label>Description<textarea id="award-description" rows="4"></textarea></label>
                 <div class="form-actions modal-form-actions">
                     <button class="primary-button" type="submit">Add award</button>
@@ -253,22 +284,41 @@
     </div>
 
     <div id="winner-modal" class="modal-backdrop" hidden>
-        <div class="modal-card glass-panel" role="dialog" aria-modal="true" aria-labelledby="winner-heading">
-            <button id="winner-modal-close" class="icon-button modal-close" type="button" aria-label="Close set winner dialog">&times;</button>
+        <div class="modal-card modal-card-wide glass-panel" role="dialog" aria-modal="true" aria-labelledby="winner-heading">
+            <button id="winner-modal-close" class="icon-button modal-close" type="button" aria-label="Close Hall of Fame dialog">&times;</button>
             <div class="modal-heading">
                 <div class="eyebrow">Hall of Fame</div>
-                <h2 id="winner-heading">Set a winner</h2>
-                <p class="modal-intro">Place a dream on the podium for an award.</p>
+                <h2 id="winner-heading">Podium dream</h2>
+                <p id="winner-slot-label" class="modal-intro"></p>
             </div>
-            <form id="winner-form" class="winner-form">
-                <label>Award<select id="winner-award" required></select></label>
-                <label>Rank<select id="winner-rank" required><option value="1">Top 1</option><option value="2">Top 2</option><option value="3">Top 3</option></select></label>
-                <label>Dream<select id="winner-story" required></select></label>
+            <div id="winner-preview" class="winner-modal-preview">
+                <img id="winner-modal-image" class="winner-modal-image" src="somniva_logo.png" alt="">
+                <div class="winner-modal-copy">
+                    <strong id="winner-modal-title">No dream selected</strong>
+                    <span id="winner-modal-link"></span>
+                </div>
+            </div>
+            <div class="winner-modal-actions">
+                <button id="winner-edit-button" class="secondary-button" type="button">Edit podium</button>
+                <button id="winner-clear-button" class="ghost-button" type="button">Clear slot</button>
+            </div>
+            <div id="winner-editor" class="winner-editor" hidden>
+                <p class="modal-intro">Swipe or use the arrows to choose a dream for this place.</p>
+                <div id="winner-carousel" class="winner-carousel">
+                    <button id="winner-prev" class="carousel-button" type="button" aria-label="Previous dream">‹</button>
+                    <div class="winner-carousel-card">
+                        <img id="winner-carousel-image" class="winner-carousel-image" src="somniva_logo.png" alt="">
+                        <strong id="winner-carousel-title">No dreams available</strong>
+                        <span id="winner-carousel-link"></span>
+                        <small id="winner-carousel-status"></small>
+                    </div>
+                    <button id="winner-next" class="carousel-button" type="button" aria-label="Next dream">›</button>
+                </div>
                 <div class="form-actions modal-form-actions">
-                    <button class="primary-button" type="submit">Set winner</button>
+                    <button id="winner-save-button" class="primary-button" type="button">Use this dream</button>
                     <span id="winner-form-status" class="form-status" role="status"></span>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
 
