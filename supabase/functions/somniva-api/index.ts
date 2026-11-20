@@ -91,13 +91,47 @@ function requiredText(value: unknown, field: string, maxLength = 10000) {
     return value.trim();
 }
 
-function storyPayload(value: Record<string, unknown>) {
-    const title = requiredText(value.title, 'Title', 180);
-    const link = requiredText(value.link, 'Link', 40).toLowerCase();
-    if (!/^p\d+[a-z]*$/.test(link)) throw new Error('Story link is invalid.');
+function alphaSuffix(index: number) {
+    let value = index;
+    let suffix = '';
+    while (value > 0) {
+        value -= 1;
+        suffix = String.fromCharCode(97 + (value % 26)) + suffix;
+        value = Math.floor(value / 26);
+    }
+    return suffix;
+}
 
-    const pageNumber = Number(value.page_number);
-    if (!Number.isInteger(pageNumber) || pageNumber < 1) throw new Error('Page number is invalid.');
+async function nextStoryPlacement(requestedPage: unknown) {
+    const requestedValue = typeof requestedPage === 'string' ? requestedPage.trim() : requestedPage;
+    const selectedPage = requestedValue === '' || requestedValue === null || requestedValue === undefined
+        ? null
+        : Number(requestedValue);
+
+    if (selectedPage !== null && (!Number.isInteger(selectedPage) || selectedPage < 1)) {
+        throw new Error('The selected page is invalid.');
+    }
+
+    const result = await admin.from('SM_stories').select('page_number, link');
+    if (result.error) throw result.error;
+
+    const stories = result.data ?? [];
+    if (selectedPage !== null && !stories.some((story) => Number(story.page_number) === selectedPage)) {
+        throw new Error('Choose an existing page or use automatic placement.');
+    }
+    const pageNumber = selectedPage ?? Math.max(0, ...stories.map((story) => Number(story.page_number) || 0)) + 1;
+    const existingLinks = new Set(stories.map((story) => String(story.link).toLowerCase()));
+    const baseLink = `p${pageNumber}`;
+
+    if (!existingLinks.has(baseLink)) return { pageNumber, link: baseLink };
+
+    let suffixIndex = 1;
+    while (existingLinks.has(`${baseLink}${alphaSuffix(suffixIndex)}`)) suffixIndex += 1;
+    return { pageNumber, link: `${baseLink}${alphaSuffix(suffixIndex)}` };
+}
+
+function storyPayload(value: Record<string, unknown>, placement: { pageNumber: number; link: string }) {
+    const title = requiredText(value.title, 'Title', 180);
 
     const dreamDate = requiredText(value.dream_date, 'Dream date', 20);
     const paragraphs = Array.isArray(value.paragraphs)
@@ -107,8 +141,8 @@ function storyPayload(value: Record<string, unknown>) {
 
     return {
         title,
-        page_number: pageNumber,
-        link,
+        page_number: placement.pageNumber,
+        link: placement.link,
         dream_date: dreamDate,
         paragraphs,
         comments: [],
@@ -117,7 +151,7 @@ function storyPayload(value: Record<string, unknown>) {
     };
 }
 
-async function archivePayload() {
+async function collectionPayload() {
     const [storiesResult, awardsResult, winnersResult, totalsResult] = await Promise.all([
         admin.from('SM_stories').select('*').order('page_number', { ascending: true }).order('link', { ascending: true }),
         admin.from('SM_awards').select('*').order('display_order', { ascending: true }).order('name', { ascending: true }),
@@ -147,19 +181,31 @@ async function saveStory(request: Request) {
     const rawPayload = {
         title: form.get('title'),
         page_number: form.get('page_number'),
-        link: form.get('link'),
         dream_date: form.get('dream_date'),
         paragraphs: JSON.parse(String(form.get('paragraphs') ?? '[]')),
         image_prompt: form.get('image_prompt'),
     };
-    const story = storyPayload(rawPayload);
+    const placement = await nextStoryPlacement(rawPayload.page_number);
+    const story = storyPayload(rawPayload, placement);
+
+    const insert = await admin.from('SM_stories').insert({ ...story, image_path: null }).select('*').single();
+    if (insert.error) throw insert.error;
+    return insert.data;
+}
+
+async function uploadStoryImage(request: Request) {
+    const form = await request.formData();
+    const storyId = requiredText(form.get('story_id'), 'Story', 80);
     const file = form.get('image');
     if (!(file instanceof File) || file.size === 0) throw new Error('A cover photo is required.');
     if (file.size > 12 * 1024 * 1024) throw new Error('Cover photo must be 12 MB or smaller.');
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPG, PNG, or WebP image.');
 
+    const existing = await admin.from('SM_stories').select('id, link, image_path').eq('id', storyId).single();
+    if (existing.error) throw existing.error;
+
     const extension = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
-    const imagePath = `img/${story.link}-${crypto.randomUUID()}.${extension}`;
+    const imagePath = `img/${existing.data.link}-${crypto.randomUUID()}.${extension}`;
     const upload = await admin.storage.from(imageBucket).upload(imagePath, file, {
         cacheControl: '3600',
         contentType: file.type,
@@ -167,17 +213,26 @@ async function saveStory(request: Request) {
     });
     if (upload.error) throw upload.error;
 
-    const insert = await admin.from('SM_stories').insert({ ...story, image_path: imagePath }).select('*').single();
-    if (insert.error) {
+    const update = await admin.from('SM_stories')
+        .update({ image_path: imagePath })
+        .eq('id', storyId)
+        .select('*')
+        .single();
+    if (update.error) {
         await admin.storage.from(imageBucket).remove([imagePath]);
-        throw insert.error;
+        throw update.error;
     }
-    return insert.data;
+    if (existing.data.image_path) {
+        await admin.storage.from(imageBucket).remove([existing.data.image_path]);
+    }
+    return update.data;
 }
 
 async function handleAction(action: string, request: Request, body: Record<string, unknown>) {
-    if (action === 'archive') return archivePayload();
+    // Keep the previous action name valid while installed PWAs receive the new shell.
+    if (action === 'collection' || action === 'archive') return collectionPayload();
     if (action === 'save-story') return saveStory(request);
+    if (action === 'upload-story-image') return uploadStoryImage(request);
 
     if (action === 'save-award') {
         const name = requiredText(body.name, 'Award name', 100);

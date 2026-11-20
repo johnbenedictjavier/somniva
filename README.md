@@ -1,6 +1,6 @@
 # Somniva | The Mystery
 
-Somniva is a private, installable PWA backed by Supabase. The archive is accessible only after the owner password is verified by the Supabase Edge Function. The browser never receives a Supabase service key and never reads the database directly.
+Somniva is a private, installable PWA backed by Supabase. The dream collection is accessible only after the owner password is verified by the Supabase Edge Function. The browser never receives a Supabase service key and never reads the database directly.
 
 ## Private Access
 
@@ -15,7 +15,7 @@ There is no Supabase Auth login and no anonymous sign-in. The Edge Function issu
 
 ## Supabase Migration
 
-The current project already contains the seeded archive. For a fresh or updated project:
+The current project already contains the seeded dream collection. For a fresh or updated project:
 
 ```powershell
 supabase link --project-ref nirtjqjcqaxlrskuvpjy
@@ -42,14 +42,15 @@ The function uses Supabase's server-side `SUPABASE_SERVICE_ROLE_KEY` automatical
 
 ## Image Workflow
 
-1. Open Manage after unlocking Somniva.
+1. Open Add dream after unlocking Somniva.
 2. Enter the title and paragraphs.
-3. Select **Generate image prompt**.
-4. Copy the fixed Somniva prompt into any image-generation tool.
-5. Upload the generated cover photo beside the prompt button.
-6. Save the dream. The prompt and image are stored in private Supabase storage/database records.
+3. Choose whether the dream opens a new page or joins an existing page. The page number and link are generated automatically.
+4. Select **Generate prompt**.
+5. Copy the fixed Somniva prompt into any image-generation tool.
+6. Create the dream first, then upload the generated cover image in the next step or later from Stories.
+7. The prompt and image are stored in private Supabase storage/database records.
 
-The generator always uses the same cinematic surreal dream-journal style: indigo, violet, midnight blue, moonlight, symbolic atmosphere, painterly realism, and no text or watermarks.
+The generator always uses the same cinematic surreal dream-journal style: indigo, violet, midnight blue, moonlight, symbolic atmosphere, painterly realism, softly blurred unrecognizable faces, and no text or watermarks.
 
 ## Frontend Configuration
 

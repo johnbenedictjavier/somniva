@@ -14,6 +14,7 @@ const state = {
     currentStory: null,
     deferredInstallPrompt: null,
     previewUrl: '',
+    pendingStoryForImage: null,
 };
 
 const romanNumerals = [
@@ -22,10 +23,11 @@ const romanNumerals = [
 ];
 const titleCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 const fixedImageStyle = [
-    'Create a cinematic surreal dream-journal illustration for Somniva.',
-    'Use a consistent nocturnal indigo, violet, midnight-blue, and soft moonlight palette.',
-    'Make it atmospheric, symbolic, emotionally vivid, richly detailed, and slightly mysterious.',
+    'Create a cinematic surreal dream-journal illustration for Somniva based faithfully on the dream details below.',
+    'Use a consistent dreamy nocturnal indigo, violet, midnight-blue, and soft moonlight palette.',
+    'Make it atmospheric, symbolic, emotionally vivid, richly detailed, and slightly mysterious, like a beautiful remembered dream.',
     'Use a strong cinematic composition with natural depth, soft luminous contrast, and painterly realism.',
+    'If any person appears, their face must be softly blurred, indistinct, anonymous, and completely unrecognizable; do not create readable facial identity.',
     'Do not include words, letters, captions, logos, watermarks, borders, UI, or readable signs.',
 ].join(' ');
 
@@ -38,6 +40,7 @@ async function init() {
     bindEvents();
     addParagraphRow();
     setDefaultDate();
+    updatePlacementPreview();
     registerServiceWorker();
     setupInstallPrompt();
 
@@ -47,16 +50,24 @@ async function init() {
     }
 
     try {
-        const archive = await apiRequest('archive');
+        const collection = await apiRequest('collection');
         unlockApp();
-        applyArchive(archive);
+        applyCollection(collection);
     } catch {
-        lockApp('Your private session expired. Unlock the archive again.');
+        lockApp('Your private session expired. Unlock Somniva again.');
     }
 }
 
 function bindEvents() {
     $('#unlock-form')?.addEventListener('submit', handleUnlock);
+    $('#add-dream-button')?.addEventListener('click', openStoryModal);
+    $('#add-award-button')?.addEventListener('click', openAwardModal);
+    $('#manage-winners-button')?.addEventListener('click', openWinnerModal);
+    $('#story-modal-close')?.addEventListener('click', () => closeModal('story-modal'));
+    $('#award-modal-close')?.addEventListener('click', () => closeModal('award-modal'));
+    $('#winner-modal-close')?.addEventListener('click', () => closeModal('winner-modal'));
+    $('#vote-close')?.addEventListener('click', () => closeModal('vote-modal'));
+
     document.addEventListener('click', (event) => {
         const sectionButton = event.target.closest('[data-section]');
         if (sectionButton) {
@@ -74,13 +85,24 @@ function bindEvents() {
         if (voteButton) {
             event.stopPropagation();
             openVoteModal(voteButton.dataset.voteStory);
+            return;
         }
+
+        const uploadButton = event.target.closest('[data-upload-story]');
+        if (uploadButton) {
+            event.stopPropagation();
+            openImageUpload(uploadButton.dataset.uploadStory);
+        }
+    });
+
+    $$('.modal-backdrop').forEach((modal) => {
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) closeModal(modal.id);
+        });
     });
 
     $('#prev-btn')?.addEventListener('click', () => changePage(-1));
     $('#next-btn')?.addEventListener('click', () => changePage(1));
-    $('#admin-button')?.addEventListener('click', toggleAdminPanel);
-    $('#admin-close')?.addEventListener('click', closeAdminPanel);
     $('#add-paragraph')?.addEventListener('click', () => addParagraphRow());
     $('#paragraph-list')?.addEventListener('click', (event) => {
         if (!event.target.closest('[data-remove-paragraph]')) return;
@@ -90,18 +112,19 @@ function bindEvents() {
             return;
         }
         event.target.closest('.paragraph-row').remove();
+        updateImagePromptIfVisible();
     });
     $('#story-form')?.addEventListener('submit', handleStorySubmit);
-    $('#story-image')?.addEventListener('change', handleImageSelection);
+    $('#story-form')?.addEventListener('input', updateImagePromptIfVisible);
+    $('#story-page-choice')?.addEventListener('change', updatePlacementPreview);
     $('#generate-image-prompt')?.addEventListener('click', generateImagePrompt);
     $('#copy-image-prompt')?.addEventListener('click', copyImagePrompt);
+    $('#story-image-file')?.addEventListener('change', handlePostImageSelection);
+    $('#upload-story-image')?.addEventListener('click', handleStoryImageUpload);
+    $('#skip-story-image')?.addEventListener('click', skipStoryImage);
     $('#award-form')?.addEventListener('submit', handleAwardSubmit);
     $('#winner-form')?.addEventListener('submit', handleWinnerSubmit);
-    $('#vote-close')?.addEventListener('click', closeVoteModal);
     $('#vote-form')?.addEventListener('submit', handleVoteSubmit);
-    $('#vote-modal')?.addEventListener('click', (event) => {
-        if (event.target.id === 'vote-modal') closeVoteModal();
-    });
     $('#install-button')?.addEventListener('click', installPwa);
 }
 
@@ -122,7 +145,7 @@ async function apiRequest(action, payload = {}) {
     const response = await fetch(SOMNIVA_CONFIG.apiUrl, { method: 'POST', headers, body });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        if (response.status === 401 && action !== 'unlock') lockApp('Your private session expired. Unlock the archive again.');
+        if (response.status === 401 && action !== 'unlock') lockApp('Your private session expired. Unlock Somniva again.');
         throw new Error(data.error || 'Somniva could not complete that request.');
     }
     return data;
@@ -139,12 +162,12 @@ async function handleUnlock(event) {
         const result = await apiRequest('unlock', { password: $('#unlock-password').value });
         state.token = result.token;
         sessionStorage.setItem('somniva_token', state.token);
-        const archive = await apiRequest('archive');
+        const collection = await apiRequest('collection');
         unlockApp();
-        applyArchive(archive);
+        applyCollection(collection);
         $('#unlock-password').value = '';
     } catch (error) {
-        status.textContent = error.message || 'The mystery remains hidden.';
+        status.textContent = error.message || 'Somniva remains hidden.';
     } finally {
         button.disabled = false;
     }
@@ -157,6 +180,7 @@ function unlockApp() {
     $('#private-app').hidden = false;
     $('#main-nav').hidden = false;
     $('#bottom-nav').hidden = false;
+    $('#add-dream-button').hidden = false;
     $('#install-button').hidden = !state.deferredInstallPrompt;
     $('#unlock-status').textContent = '';
 }
@@ -174,17 +198,16 @@ function lockApp(message = '') {
     state.token = null;
     state.unlocked = false;
     sessionStorage.removeItem('somniva_token');
-    closeVoteModal();
-    closeAdminPanel();
+    closeAllModals();
     showLockScreen();
     $('#unlock-status').textContent = message;
 }
 
-function applyArchive(archive) {
-    state.stories = (archive.stories || []).map(normalizeStory);
-    state.awards = archive.awards || [];
-    state.winners = archive.winners || [];
-    state.voteTotals = archive.voteTotals || [];
+function applyCollection(collection) {
+    state.stories = (collection.stories || []).map(normalizeStory);
+    state.awards = collection.awards || [];
+    state.winners = collection.winners || [];
+    state.voteTotals = collection.voteTotals || [];
     hideDataStatus();
     renderAll();
 }
@@ -198,10 +221,11 @@ function normalizeStory(story) {
     };
 }
 
-async function loadArchive() {
-    showDataStatus('Opening the archive...');
-    const archive = await apiRequest('archive');
-    applyArchive(archive);
+async function loadCollection(showStatus = true) {
+    if (showStatus) showDataStatus('Opening your dreambook...');
+    const collection = await apiRequest('collection');
+    applyCollection(collection);
+    return collection;
 }
 
 function renderAll() {
@@ -210,23 +234,23 @@ function renderAll() {
     displayEvents();
     renderStories();
     populateAdminSelects();
+    populatePageChoices();
 }
 
 function renderHome() {
     const recentContainer = $('#recent-dream-content');
-    const winnerContainer = $('#home-winners');
-    if (!recentContainer || !winnerContainer) return;
+    if (!recentContainer) return;
 
     const recent = [...state.stories].sort(compareRecent)[0];
     recentContainer.replaceChildren();
     if (!recent) {
-        recentContainer.append(createEmptyState('No dreams have been published yet.'));
+        recentContainer.append(createEmptyState('No dreams have been created yet.'));
     } else {
         const title = document.createElement('h2');
         title.textContent = recent.title;
         const date = document.createElement('p');
         date.className = 'feature-date';
-        date.textContent = `${formatDate(recent.dream_date)} · Page ${recent.page_number}`;
+        date.textContent = `${formatDate(recent.dream_date)} · ${recent.link}`;
         const excerpt = document.createElement('p');
         excerpt.className = 'feature-excerpt';
         excerpt.textContent = plainText(recent.paragraphs[0] || 'A new dream is waiting to be read.');
@@ -234,34 +258,54 @@ function renderHome() {
         button.className = 'text-button feature-link';
         button.type = 'button';
         button.dataset.storyLink = recent.link;
-        button.textContent = 'Read the entry →';
+        button.textContent = 'Read this dream →';
         recentContainer.append(title, date, excerpt, button);
     }
 
-    winnerContainer.replaceChildren();
-    const firstPlaces = state.winners
-        .filter((winner) => Number(winner.rank) === 1)
-        .map((winner) => ({ winner, award: state.awards.find((item) => item.id === winner.award_id), story: getStory(winner.story_id) }))
-        .filter((item) => item.award && item.story);
+    renderHomeMarquee();
+}
 
+function renderHomeMarquee() {
+    const container = $('#home-winners');
+    if (!container) return;
+    container.replaceChildren();
+
+    const firstPlaces = getFirstPlaceItems();
     if (!firstPlaces.length) {
-        winnerContainer.append(createEmptyState('The dreamer has not selected first places yet.'));
+        container.append(createEmptyState('The dreamer has not selected first places yet.'));
         return;
     }
 
-    firstPlaces.forEach(({ award, story }) => {
-        const item = document.createElement('button');
-        item.className = 'mini-winner';
-        item.type = 'button';
-        item.dataset.storyLink = story.link;
+    const track = document.createElement('div');
+    track.className = `marquee-track${firstPlaces.length > 1 ? ' is-looping' : ''}`;
+    const items = firstPlaces.length > 1 ? [...firstPlaces, ...firstPlaces] : firstPlaces;
+    items.forEach(({ award, story }, index) => {
+        const card = document.createElement('button');
+        card.className = 'marquee-card';
+        card.type = 'button';
+        card.dataset.storyLink = story.link;
+        if (index >= firstPlaces.length && firstPlaces.length > 1) card.setAttribute('aria-hidden', 'true');
+        const image = createStoryImage(story, 'marquee-image');
         const label = document.createElement('span');
-        label.className = 'mini-winner-award';
+        label.className = 'marquee-label';
         label.textContent = award.name;
         const title = document.createElement('strong');
         title.textContent = story.title;
-        item.append(label, title);
-        winnerContainer.append(item);
+        card.append(image, label, title);
+        track.append(card);
     });
+    container.append(track);
+}
+
+function getFirstPlaceItems() {
+    return state.winners
+        .filter((winner) => Number(winner.rank) === 1)
+        .map((winner) => ({
+            winner,
+            award: state.awards.find((item) => item.id === winner.award_id),
+            story: getStory(winner.story_id),
+        }))
+        .filter((item) => item.award && item.story);
 }
 
 function renderAwards() {
@@ -298,7 +342,7 @@ function renderAwards() {
 
 function createWinnerCard(story, rank, awardId) {
     const card = document.createElement('button');
-    card.className = `winner rank-${rank}${story ? '' : ' winner-empty'}`;
+    card.className = `winner rank-${rank}`;
     card.type = 'button';
     if (story) card.dataset.storyLink = story.link;
 
@@ -346,7 +390,7 @@ function displayEvents() {
     const entries = sorted.slice(start, start + state.itemsPerPage);
     container.replaceChildren();
 
-    if (!entries.length) container.append(createEmptyState('No published titles are available.'));
+    if (!entries.length) container.append(createEmptyState('No dream titles are available.'));
     else entries.forEach((story) => {
         const row = document.createElement('div');
         row.className = 'events';
@@ -356,7 +400,8 @@ function displayEvents() {
         title.dataset.storyLink = story.link;
         title.textContent = story.title;
         const page = document.createElement('span');
-        page.textContent = story.page_number;
+        page.className = 'event-link';
+        page.textContent = story.link;
         row.append(title, page);
         container.append(row);
     });
@@ -377,7 +422,7 @@ function renderStories() {
     if (!container) return;
     container.replaceChildren();
     if (!state.stories.length) {
-        container.append(createEmptyState('The story pages will appear here after the database is seeded.'));
+        container.append(createEmptyState('Dream pages will appear here.'));
         return;
     }
 
@@ -391,11 +436,11 @@ function renderStories() {
 
     pages.forEach((stories, pageNumber) => {
         const page = document.createElement('div');
-        page.className = 'pages';
+        page.className = 'pages depth-card';
         page.id = `page-${pageNumber}`;
         const pageNumberLabel = document.createElement('div');
         pageNumberLabel.className = 'pagenum';
-        pageNumberLabel.textContent = pageNumber;
+        pageNumberLabel.textContent = `Page ${pageNumber}`;
         const border = document.createElement('div');
         border.className = 'border';
 
@@ -422,16 +467,27 @@ function createStoryArticle(story) {
     const topLine = document.createElement('div');
     topLine.className = 'story-topline';
     const storyLabel = document.createElement('span');
-    storyLabel.textContent = `Page ${story.page_number}`;
+    storyLabel.textContent = story.link;
+    const actions = document.createElement('div');
+    actions.className = 'story-actions';
+    if (!story.image_path) {
+        const coverButton = document.createElement('button');
+        coverButton.className = 'text-button story-cover-action';
+        coverButton.type = 'button';
+        coverButton.dataset.uploadStory = story.id;
+        coverButton.textContent = 'Add cover';
+        actions.append(coverButton);
+    }
     const vote = document.createElement('button');
     vote.className = 'vote-button';
     vote.type = 'button';
     vote.dataset.voteStory = story.id;
     vote.textContent = 'Give points';
-    topLine.append(storyLabel, vote);
+    actions.append(vote);
+    topLine.append(storyLabel, actions);
 
     const picture = document.createElement('div');
-    picture.className = 'pic';
+    picture.className = `pic${story.image_path ? '' : ' has-no-image'}`;
     picture.append(createStoryImage(story, 'story-image'));
     const title = document.createElement('h1');
     title.textContent = story.title;
@@ -440,7 +496,7 @@ function createStoryArticle(story) {
     const paragraphs = document.createElement('div');
     paragraphs.className = 'story-paragraphs';
     story.paragraphs.forEach((content) => {
-        const paragraph = document.createElement('summary');
+        const paragraph = document.createElement('p');
         paragraph.innerHTML = sanitizeHtml(content);
         paragraphs.append(paragraph);
     });
@@ -453,7 +509,7 @@ function createStoryArticle(story) {
         commentDate.textContent = comment.date || 'Comment';
         commentCard.append(commentDate);
         (comment.paragraphs || []).forEach((content) => {
-            const paragraph = document.createElement('summary');
+            const paragraph = document.createElement('p');
             paragraph.innerHTML = sanitizeHtml(content);
             commentCard.append(paragraph);
         });
@@ -467,7 +523,9 @@ function createStoryImage(story, className) {
     const image = document.createElement('img');
     image.className = className;
     image.alt = story.title;
+    image.loading = 'lazy';
     image.src = story.image_url || 'somniva_logo.png';
+    if (!story.image_url) image.classList.add('image-fallback');
     return image;
 }
 
@@ -482,15 +540,8 @@ function openVoteModal(storyId) {
     populateVoteAwards();
     $('#vote-points').value = '10';
     $('#vote-status').textContent = '';
-    $('#vote-modal').hidden = false;
-    document.body.classList.add('modal-open');
+    openModal('vote-modal');
     $('#vote-award').focus();
-}
-
-function closeVoteModal() {
-    $('#vote-modal').hidden = true;
-    document.body.classList.remove('modal-open');
-    state.currentStory = null;
 }
 
 async function handleVoteSubmit(event) {
@@ -504,10 +555,9 @@ async function handleVoteSubmit(event) {
             story_id: state.currentStory.id,
             points: Number($('#vote-points').value),
         });
-        status.textContent = 'Points saved.';
-        showToast('Your points are in the archive.');
-        await loadArchive();
-        window.setTimeout(closeVoteModal, 500);
+        closeModal('vote-modal');
+        showToast('Your points are saved.');
+        await loadCollection(false);
     } catch (error) {
         status.textContent = error.message;
     }
@@ -539,48 +589,106 @@ function populateAdminSelects() {
     sortByTitle(state.stories).forEach((story) => {
         const option = document.createElement('option');
         option.value = story.id;
-        option.textContent = `${story.title} · Page ${story.page_number}`;
+        option.textContent = `${story.title} · ${story.link}`;
         storySelect.append(option);
     });
+}
+
+function populatePageChoices() {
+    const select = $('#story-page-choice');
+    if (!select) return;
+    const current = select.value;
+    select.replaceChildren();
+    const automatic = document.createElement('option');
+    automatic.value = '';
+    automatic.textContent = `New page automatically · ${generateLinkForPage(getNextPageNumber())}`;
+    select.append(automatic);
+
+    [...new Set(state.stories.map((story) => story.page_number))]
+        .sort((a, b) => a - b)
+        .forEach((pageNumber) => {
+            const option = document.createElement('option');
+            option.value = String(pageNumber);
+            option.textContent = `Page ${pageNumber} · next ${generateLinkForPage(pageNumber)}`;
+            select.append(option);
+        });
+
+    if ([...select.options].some((option) => option.value === current)) select.value = current;
+    updatePlacementPreview();
+}
+
+function updatePlacementPreview() {
+    const preview = $('#story-placement-preview');
+    const select = $('#story-page-choice');
+    if (!preview || !select) return;
+    const pageNumber = select.value ? Number(select.value) : getNextPageNumber();
+    const link = generateLinkForPage(pageNumber);
+    preview.textContent = select.value
+        ? `This dream will join page ${pageNumber} as ${link}.`
+        : `This dream will open the next page as ${link}.`;
+}
+
+function getNextPageNumber() {
+    return Math.max(0, ...state.stories.map((story) => Number(story.page_number) || 0)) + 1;
+}
+
+function generateLinkForPage(pageNumber) {
+    const base = `p${pageNumber}`;
+    const existing = new Set(state.stories.map((story) => story.link.toLowerCase()));
+    if (!existing.has(base)) return base;
+    let suffixIndex = 1;
+    while (existing.has(`${base}${alphaSuffix(suffixIndex)}`)) suffixIndex += 1;
+    return `${base}${alphaSuffix(suffixIndex)}`;
+}
+
+function alphaSuffix(index) {
+    let value = index;
+    let suffix = '';
+    while (value > 0) {
+        value -= 1;
+        suffix = String.fromCharCode(97 + (value % 26)) + suffix;
+        value = Math.floor(value / 26);
+    }
+    return suffix;
 }
 
 async function handleStorySubmit(event) {
     event.preventDefault();
     const status = $('#story-form-status');
-    status.textContent = 'Saving dream and private image...';
     const title = $('#story-title').value.trim();
-    const pageNumber = Number($('#story-page').value);
-    const linkInput = $('#story-link').value.trim().toLowerCase();
-    const link = linkInput || generateLink(pageNumber);
+    const dreamDate = $('#story-date').value;
+    const selectedPage = $('#story-page-choice').value;
     const paragraphs = $$('#paragraph-list textarea').map((field) => field.value.trim()).filter(Boolean);
-    const imageFile = $('#story-image').files[0];
-    const imagePrompt = $('#story-image-prompt').value.trim() || buildImagePrompt();
+    let imagePrompt = $('#story-image-prompt').value.trim();
 
-    if (!title || !pageNumber || !paragraphs.length || !imageFile) {
-        status.textContent = 'Add a title, page number, paragraphs, and cover photo.';
+    if (!title || !dreamDate || !paragraphs.length) {
+        status.textContent = 'Add a title, date, and at least one paragraph.';
         return;
     }
-    if (!/^p\d+[a-z]*$/.test(link) || state.stories.some((story) => story.link === link)) {
-        status.textContent = 'Use a unique link such as p29 or p29a.';
-        return;
+    if (!imagePrompt) {
+        imagePrompt = buildImagePrompt();
+        $('#story-image-prompt').value = imagePrompt;
     }
 
+    status.textContent = 'Creating the dream...';
     const form = new FormData();
     form.append('title', title);
-    form.append('page_number', String(pageNumber));
-    form.append('link', link);
-    form.append('dream_date', $('#story-date').value);
+    form.append('page_number', selectedPage);
+    form.append('dream_date', dreamDate);
     form.append('paragraphs', JSON.stringify(paragraphs));
     form.append('image_prompt', imagePrompt);
-    form.append('image', imageFile, imageFile.name);
 
     try {
-        await apiRequest('save-story', form);
-        status.textContent = 'Dream saved privately.';
-        resetStoryForm();
-        await loadArchive();
+        const created = await apiRequest('save-story', form);
+        state.pendingStoryForImage = created;
+        $('#story-created-label').textContent = `${created.title} · ${created.link}`;
+        $('#story-form').hidden = true;
+        $('#story-image-step').hidden = false;
+        status.textContent = '';
+        await loadCollection(false);
+        $('#story-image-file').focus();
     } catch (error) {
-        status.textContent = error.message || 'Unable to save the dream.';
+        status.textContent = error.message || 'Unable to create the dream.';
     }
 }
 
@@ -596,8 +704,9 @@ async function handleAwardSubmit(event) {
         });
         $('#award-form').reset();
         $('#award-order').value = String(state.awards.length + 1);
-        status.textContent = 'Award added.';
-        await loadArchive();
+        closeModal('award-modal');
+        showToast('Award added.');
+        await loadCollection(false);
     } catch (error) {
         status.textContent = error.message;
     }
@@ -613,8 +722,9 @@ async function handleWinnerSubmit(event) {
             story_id: $('#winner-story').value,
             rank: Number($('#winner-rank').value),
         });
-        status.textContent = 'Hall of Fame updated.';
-        await loadArchive();
+        closeModal('winner-modal');
+        showToast('Hall of Fame updated.');
+        await loadCollection(false);
     } catch (error) {
         status.textContent = error.message;
     }
@@ -643,8 +753,15 @@ function addParagraphRow(value = '') {
 function generateImagePrompt() {
     const prompt = buildImagePrompt();
     $('#story-image-prompt').value = prompt;
-    $('#image-prompt-output').hidden = false;
     $('#image-prompt-status').textContent = 'Prompt ready to copy.';
+}
+
+function updateImagePromptIfVisible() {
+    const prompt = $('#story-image-prompt');
+    if (!prompt || prompt.value.trim()) return;
+    if ($('#story-title').value.trim() || $$('#paragraph-list textarea').some((field) => field.value.trim())) {
+        $('#image-prompt-status').textContent = 'Generate the prompt when the dream is ready.';
+    }
 }
 
 function buildImagePrompt() {
@@ -653,7 +770,7 @@ function buildImagePrompt() {
         .map((field) => plainText(field.value.trim()))
         .filter(Boolean)
         .join(' ')
-        .slice(0, 2600);
+        .slice(0, 3000);
     return `${fixedImageStyle}\n\nDream title: ${title}\nDream scene and details: ${paragraphs || 'A mysterious dream scene with symbolic details.'}\n\nComposition: focus on the most memorable visual moment from the dream, balanced focal subject, immersive environment, portrait-friendly framing.`;
 }
 
@@ -670,11 +787,11 @@ async function copyImagePrompt() {
         textarea.select();
         document.execCommand('copy');
     }
-    $('#image-prompt-status').textContent = 'Copied. Paste it into any image generator.';
+    $('#image-prompt-status').textContent = 'Copied. Paste it into your image generator.';
 }
 
-function handleImageSelection() {
-    const file = $('#story-image').files[0];
+function handlePostImageSelection() {
+    const file = $('#story-image-file').files[0];
     const preview = $('#story-image-preview');
     if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
     if (!file) {
@@ -688,28 +805,107 @@ function handleImageSelection() {
     preview.hidden = false;
 }
 
-function resetStoryForm() {
+async function handleStoryImageUpload() {
+    const file = $('#story-image-file').files[0];
+    const status = $('#story-image-status');
+    if (!state.pendingStoryForImage || !file) {
+        status.textContent = 'Choose an image first.';
+        return;
+    }
+    status.textContent = 'Uploading cover...';
+    const form = new FormData();
+    form.append('story_id', state.pendingStoryForImage.id);
+    form.append('image', file, file.name);
+    try {
+        await apiRequest('upload-story-image', form);
+        resetStoryModal();
+        closeModal('story-modal');
+        showToast('Cover added to the dream.');
+        await loadCollection(false);
+    } catch (error) {
+        status.textContent = error.message || 'Unable to upload the cover.';
+    }
+}
+
+function skipStoryImage() {
+    resetStoryModal();
+    closeModal('story-modal');
+    showToast('Dream created. Add its cover later from Stories.');
+}
+
+function openImageUpload(storyId) {
+    const story = getStory(storyId);
+    if (!story) return;
+    state.pendingStoryForImage = story;
+    $('#story-created-label').textContent = `${story.title} · ${story.link}`;
+    $('#story-form').hidden = true;
+    $('#story-image-step').hidden = false;
+    $('#story-image-status').textContent = '';
+    $('#story-image-file').value = '';
+    $('#story-image-preview').hidden = true;
+    openModal('story-modal');
+}
+
+function openStoryModal() {
+    if (state.pendingStoryForImage) {
+        $('#story-form').hidden = true;
+        $('#story-image-step').hidden = false;
+    } else {
+        resetStoryModal();
+    }
+    openModal('story-modal');
+}
+
+function openAwardModal() {
+    $('#award-order').value = String(state.awards.length + 1);
+    openModal('award-modal');
+    $('#award-name').focus();
+}
+
+function openWinnerModal() {
+    populateAdminSelects();
+    openModal('winner-modal');
+    $('#winner-award').focus();
+}
+
+function resetStoryModal() {
     $('#story-form').reset();
+    $('#story-form').hidden = false;
     $('#paragraph-list').replaceChildren();
     addParagraphRow();
-    $('#image-prompt-output').hidden = true;
     $('#story-image-prompt').value = '';
+    $('#image-prompt-status').textContent = '';
+    $('#story-form-status').textContent = '';
+    $('#story-image-step').hidden = true;
+    $('#story-image-file').value = '';
+    $('#story-image-status').textContent = '';
     $('#story-image-preview').hidden = true;
     if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
     state.previewUrl = '';
+    state.pendingStoryForImage = null;
     setDefaultDate();
+    populatePageChoices();
 }
 
-function generateLink(pageNumber) {
-    const base = `p${pageNumber}`;
-    if (!state.stories.some((story) => story.link === base)) return base;
-    let suffix = 0;
-    let link = base;
-    do {
-        suffix += 1;
-        link = `${base}${String.fromCharCode(96 + suffix)}`;
-    } while (state.stories.some((story) => story.link === link));
-    return link;
+function openModal(id) {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+}
+
+function closeModal(id) {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.hidden = true;
+    if (!$$('.modal-backdrop:not([hidden])').length) document.body.classList.remove('modal-open');
+    if (id === 'vote-modal') state.currentStory = null;
+}
+
+function closeAllModals() {
+    $$('.modal-backdrop').forEach((modal) => { modal.hidden = true; });
+    document.body.classList.remove('modal-open');
+    state.currentStory = null;
 }
 
 function showSection(sectionId) {
@@ -720,25 +916,12 @@ function showSection(sectionId) {
         if (isActive) item.setAttribute('aria-current', 'page');
         else item.removeAttribute('aria-current');
     });
-    if (sectionId === 'stories-section') $('#stories-viewport')?.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function goToStory(link) {
     showSection('stories-section');
     window.setTimeout(() => document.getElementById(link)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 20);
-}
-
-function toggleAdminPanel() {
-    showSection('home-section');
-    const panel = $('#admin-panel');
-    panel.hidden = !panel.hidden;
-    $('#admin-button').setAttribute('aria-expanded', String(!panel.hidden));
-    if (!panel.hidden) panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
-function closeAdminPanel() {
-    $('#admin-panel').hidden = true;
-    $('#admin-button').setAttribute('aria-expanded', 'false');
 }
 
 function setupInstallPrompt() {

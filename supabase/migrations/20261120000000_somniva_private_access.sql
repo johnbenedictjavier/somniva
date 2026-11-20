@@ -1,4 +1,4 @@
--- Lock the existing Somniva archive behind the password-only Edge Function.
+-- Lock the existing Somniva collection behind the password-only Edge Function.
 
 alter table public."SM_stories"
     add column if not exists image_prompt text not null default '';

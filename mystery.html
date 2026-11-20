@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#090d19">
-    <meta name="description" content="Somniva, The Mystery: a private archive of remembered dreams.">
+    <meta name="theme-color" content="#0f0c29">
+    <meta name="description" content="Somniva, The Mystery: a private collection of remembered dreams.">
     <title>Somniva | The Mystery</title>
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="somniva_logo.png" type="image/png">
@@ -29,21 +29,24 @@
             <small>The Mystery</small>
         </button>
         <div class="nav-actions">
-            <button id="install-button" class="ghost-button install-button" type="button" hidden>Install app</button>
-            <button id="admin-button" class="ghost-button" type="button" aria-expanded="false">Manage</button>
+            <button id="add-dream-button" class="primary-button top-action" type="button">
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                <span>Add dream</span>
+            </button>
+            <button id="install-button" class="ghost-button install-button" type="button" hidden>Install</button>
         </div>
     </header>
 
     <main id="app-container">
         <section id="lock-section" class="lock-section">
-            <div class="lock-card glass-panel">
+            <div class="lock-card glass-panel depth-card">
                 <img class="lock-logo" src="somniva_logo.png" alt="Somniva logo">
                 <div class="eyebrow">A private atlas of remembered worlds</div>
                 <h1>Somniva</h1>
                 <p class="hero-subtitle">The Mystery</p>
-                <p class="hero-copy">This archive belongs to the dreamer.</p>
+                <p class="hero-copy">This private collection belongs to the dreamer.</p>
                 <form id="unlock-form" class="unlock-form">
-                    <label for="unlock-password">Archive password</label>
+                    <label for="unlock-password">Somniva password</label>
                     <div class="unlock-row">
                         <input id="unlock-password" type="password" autocomplete="current-password" placeholder="Enter password" required>
                         <button class="primary-button" type="submit">Unlock</button>
@@ -56,78 +59,35 @@
         <div id="private-app" hidden>
             <section id="home-section" class="app-section active">
                 <div class="home-shell">
-                    <div class="hero-card glass-panel">
+                    <div class="hero-card glass-panel depth-card">
                         <img class="hero-logo" src="somniva_logo.png" alt="Somniva">
                         <div class="eyebrow">A private atlas of remembered worlds</div>
                         <h1>Somniva</h1>
                         <p class="hero-subtitle">The Mystery</p>
                         <p class="hero-copy">Dreams fade. The details do not have to.</p>
                         <div class="hero-actions">
-                            <button class="primary-button" type="button" data-section="stories-section">Enter the archive</button>
-                            <button class="secondary-button" type="button" data-section="best-section">View Hall of Fame</button>
+                            <button class="primary-button" type="button" data-section="stories-section">
+                                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10.5A3.5 3.5 0 0 1 19 8v11.5H8.5A3.5 3.5 0 0 0 5 23V4.5Z" /><path d="M5 19.5A3.5 3.5 0 0 1 8.5 16H19M8 8h7M8 11h7" /></svg>
+                                <span>Open dreambook</span>
+                            </button>
+                            <button class="secondary-button" type="button" data-section="best-section">
+                                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" /></svg>
+                                <span>Hall of Fame</span>
+                            </button>
                         </div>
                         <div id="data-status" class="status-message" role="status" hidden></div>
                     </div>
 
                     <div class="home-grid">
-                        <article id="recent-dream-card" class="glass-panel feature-card">
-                            <div class="card-kicker">Latest entry</div>
+                        <article id="recent-dream-card" class="glass-panel feature-card depth-card">
+                            <div class="card-kicker">Latest dream</div>
                             <div id="recent-dream-content" class="loading-copy">Loading the latest dream...</div>
                         </article>
-                        <article id="home-winners-card" class="glass-panel feature-card">
-                            <div class="card-kicker">The chosen few</div>
-                            <h2>Hall of Fame first places</h2>
-                            <div id="home-winners" class="mini-winners loading-copy">Loading the winners...</div>
+                        <article id="home-winners-card" class="glass-panel feature-card feature-card-wide depth-card">
+                            <div class="card-kicker">A moving constellation</div>
+                            <h2>Hall of Fame</h2>
+                            <div id="home-winners" class="marquee-viewport loading-copy">Loading the chosen dreams...</div>
                         </article>
-                    </div>
-
-                    <div id="admin-panel" class="admin-panel glass-panel" hidden>
-                        <div class="admin-heading">
-                            <div>
-                                <div class="card-kicker">Owner workspace</div>
-                                <h2>Archive controls</h2>
-                            </div>
-                            <button id="admin-close" class="icon-button" type="button" aria-label="Close archive controls">&times;</button>
-                        </div>
-
-                        <form id="story-form" class="editor-form">
-                            <div class="form-heading">
-                                <div>
-                                    <div class="card-kicker">New archive entry</div>
-                                    <h3>Add a dream</h3>
-                                </div>
-                                <span class="form-note">All fields marked * are required</span>
-                            </div>
-                            <div class="form-grid">
-                                <label>Title *<input id="story-title" type="text" required maxlength="180"></label>
-                                <label>Page number *<input id="story-page" type="number" min="1" required></label>
-                                <label>Dream date *<input id="story-date" type="date" required></label>
-                                <label>Link (optional)<input id="story-link" type="text" pattern="p[0-9]+[a-z]*" placeholder="Generated automatically"></label>
-                            </div>
-
-                            <div class="image-workflow">
-                                <label>Cover photo *<input id="story-image" type="file" accept="image/jpeg,image/png,image/webp" required></label>
-                                <button id="generate-image-prompt" class="secondary-button" type="button">Generate image prompt</button>
-                            </div>
-                            <div id="image-prompt-output" class="image-prompt-output" hidden>
-                                <label>Somniva image prompt<textarea id="story-image-prompt" rows="8" readonly></textarea></label>
-                                <div class="prompt-actions">
-                                    <button id="copy-image-prompt" class="text-button" type="button">Copy prompt</button>
-                                    <span id="image-prompt-status" class="form-status" role="status"></span>
-                                </div>
-                                <img id="story-image-preview" class="story-upload-preview" alt="Selected cover preview" hidden>
-                            </div>
-
-                            <div class="paragraph-heading">
-                                <span>Story paragraphs *</span>
-                                <button id="add-paragraph" class="text-button" type="button">+ Add paragraph</button>
-                            </div>
-                            <div id="paragraph-list" class="paragraph-list"></div>
-                            <div class="form-actions">
-                                <button class="primary-button" type="submit">Save dream</button>
-                                <span id="story-form-status" class="form-status" role="status"></span>
-                            </div>
-                        </form>
                     </div>
                 </div>
             </section>
@@ -138,39 +98,23 @@
                         <div class="eyebrow">Curated by the dreamer</div>
                         <h1 class="hall-title">Hall of Fame</h1>
                         <p class="subtitle">Mementos of the most vivid realms</p>
-                    </div>
-
-                    <div id="hall-admin-tools" class="admin-inline glass-panel">
-                        <div class="admin-heading">
-                            <div>
-                                <div class="card-kicker">Owner controls</div>
-                                <h2>Shape the Hall of Fame</h2>
-                            </div>
+                        <div class="section-actions">
+                            <button id="add-award-button" class="secondary-button" type="button">
+                                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                                <span>Add award</span>
+                            </button>
+                            <button id="manage-winners-button" class="ghost-button" type="button">
+                                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="8" cy="6" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="11" cy="18" r="1" /></svg>
+                                <span>Set winners</span>
+                            </button>
                         </div>
-                        <form id="award-form" class="form-grid compact-form">
-                            <label>Award name *<input id="award-name" type="text" required maxlength="100"></label>
-                            <label>Display order *<input id="award-order" type="number" min="0" value="1" required></label>
-                            <label class="full-field">Description<textarea id="award-description" rows="2"></textarea></label>
-                            <div class="form-actions full-field">
-                                <button class="primary-button" type="submit">Add award</button>
-                                <span id="award-form-status" class="form-status" role="status"></span>
-                            </div>
-                        </form>
-                        <form id="winner-form" class="winner-form">
-                            <label>Award<select id="winner-award" required></select></label>
-                            <label>Rank<select id="winner-rank" required><option value="1">Top 1</option><option value="2">Top 2</option><option value="3">Top 3</option></select></label>
-                            <label>Story<select id="winner-story" required></select></label>
-                            <button class="secondary-button" type="submit">Set winner</button>
-                            <span id="winner-form-status" class="form-status" role="status"></span>
-                        </form>
                     </div>
-
                     <div id="awards-container" class="awards-container"></div>
                 </div>
             </section>
 
             <section id="index-section" class="app-section">
-                <div class="index-card glass-panel">
+                <div class="index-card glass-panel depth-card">
                     <div class="pagenum" id="page-indicator">I</div>
                     <div class="section-heading">
                         <div class="eyebrow">The living index</div>
@@ -195,30 +139,134 @@
     </main>
 
     <nav id="bottom-nav" class="floating-nav" aria-label="Primary navigation" hidden>
-        <button class="nav-item active" type="button" data-section="home-section" aria-current="page">
-            <span class="nav-icon" aria-hidden="true">⌂</span><span>Home</span>
+        <button class="nav-item active" type="button" data-section="home-section" aria-current="page" aria-label="Home">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V10Z" /></svg>
+            <span>Home</span>
         </button>
-        <button class="nav-item" type="button" data-section="index-section">
-            <span class="nav-icon" aria-hidden="true">≡</span><span>Titles &amp; Pages</span>
+        <button class="nav-item" type="button" data-section="index-section" aria-label="Titles and pages">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" /></svg>
+            <span>Index</span>
         </button>
-        <button class="nav-item" type="button" data-section="stories-section">
-            <span class="nav-icon" aria-hidden="true">◈</span><span>Stories</span>
+        <button class="nav-item" type="button" data-section="stories-section" aria-label="Stories">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10.5A3.5 3.5 0 0 1 19 8v11.5H8.5A3.5 3.5 0 0 0 5 23V4.5Z" /><path d="M5 19.5A3.5 3.5 0 0 1 8.5 16H19" /></svg>
+            <span>Stories</span>
         </button>
-        <button class="nav-item" type="button" data-section="best-section">
-            <span class="nav-icon" aria-hidden="true">✦</span><span>Hall of Fame</span>
+        <button class="nav-item" type="button" data-section="best-section" aria-label="Hall of Fame">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" /></svg>
+            <span>Fame</span>
         </button>
     </nav>
 
+    <div id="story-modal" class="modal-backdrop" hidden>
+        <div class="modal-card modal-card-wide glass-panel" role="dialog" aria-modal="true" aria-labelledby="story-modal-heading">
+            <button id="story-modal-close" class="icon-button modal-close" type="button" aria-label="Close add dream dialog">&times;</button>
+            <div class="modal-heading">
+                <div class="eyebrow">Owner workspace</div>
+                <h2 id="story-modal-heading">Add a dream</h2>
+                <p class="modal-intro">Write the moment first. Give it an image when the right one exists.</p>
+            </div>
+
+            <form id="story-form" class="editor-form">
+                <div class="form-grid">
+                    <label>Dream title *<input id="story-title" type="text" required maxlength="180" autocomplete="off"></label>
+                    <label>Dream date *<input id="story-date" type="date" required></label>
+                    <label class="full-field">Add to an existing page <select id="story-page-choice"><option value="">New page automatically</option></select></label>
+                </div>
+                <p id="story-placement-preview" class="placement-preview" role="status"></p>
+
+                <div class="paragraph-heading">
+                    <span>Dream paragraphs *</span>
+                    <button id="add-paragraph" class="text-button" type="button">+ Add paragraph</button>
+                </div>
+                <div id="paragraph-list" class="paragraph-list"></div>
+
+                <div class="image-prompt-output image-prompt-editor">
+                    <div class="prompt-heading">
+                        <div>
+                            <div class="card-kicker">Story to image</div>
+                            <h3>Generate the visual prompt</h3>
+                        </div>
+                        <span class="prompt-required">Copy before creating the cover</span>
+                    </div>
+                    <textarea id="story-image-prompt" rows="8" readonly placeholder="Write the title and dream paragraphs, then generate your prompt."></textarea>
+                    <div class="prompt-actions">
+                        <button id="generate-image-prompt" class="secondary-button" type="button">Generate prompt</button>
+                        <button id="copy-image-prompt" class="text-button" type="button">Copy prompt</button>
+                        <span id="image-prompt-status" class="form-status" role="status"></span>
+                    </div>
+                </div>
+
+                <div class="form-actions modal-form-actions">
+                    <button class="primary-button" type="submit">Create dream</button>
+                    <span id="story-form-status" class="form-status" role="status"></span>
+                </div>
+            </form>
+
+            <section id="story-image-step" class="post-save-step" hidden>
+                <div class="card-kicker">Dream created</div>
+                <h3 id="story-created-label">Add a cover when ready</h3>
+                <p class="modal-intro">Use the copied prompt in your image generator, then upload the finished image here. This step can be skipped.</p>
+                <label>Cover image <input id="story-image-file" type="file" accept="image/jpeg,image/png,image/webp"></label>
+                <img id="story-image-preview" class="story-upload-preview" alt="Cover preview" hidden>
+                <div class="form-actions modal-form-actions">
+                    <button id="upload-story-image" class="primary-button" type="button">Upload cover</button>
+                    <button id="skip-story-image" class="ghost-button" type="button">Do this later</button>
+                    <span id="story-image-status" class="form-status" role="status"></span>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="award-modal" class="modal-backdrop" hidden>
+        <div class="modal-card glass-panel" role="dialog" aria-modal="true" aria-labelledby="award-heading">
+            <button id="award-modal-close" class="icon-button modal-close" type="button" aria-label="Close add award dialog">&times;</button>
+            <div class="modal-heading">
+                <div class="eyebrow">Hall of Fame</div>
+                <h2 id="award-heading">Add an award</h2>
+                <p class="modal-intro">Create a new distinction for the dreams that stay with you.</p>
+            </div>
+            <form id="award-form" class="compact-form">
+                <label>Award name *<input id="award-name" type="text" required maxlength="100"></label>
+                <label>Display order *<input id="award-order" type="number" min="0" value="1" required></label>
+                <label>Description<textarea id="award-description" rows="4"></textarea></label>
+                <div class="form-actions modal-form-actions">
+                    <button class="primary-button" type="submit">Add award</button>
+                    <span id="award-form-status" class="form-status" role="status"></span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="winner-modal" class="modal-backdrop" hidden>
+        <div class="modal-card glass-panel" role="dialog" aria-modal="true" aria-labelledby="winner-heading">
+            <button id="winner-modal-close" class="icon-button modal-close" type="button" aria-label="Close set winner dialog">&times;</button>
+            <div class="modal-heading">
+                <div class="eyebrow">Hall of Fame</div>
+                <h2 id="winner-heading">Set a winner</h2>
+                <p class="modal-intro">Place a dream on the podium for an award.</p>
+            </div>
+            <form id="winner-form" class="winner-form">
+                <label>Award<select id="winner-award" required></select></label>
+                <label>Rank<select id="winner-rank" required><option value="1">Top 1</option><option value="2">Top 2</option><option value="3">Top 3</option></select></label>
+                <label>Dream<select id="winner-story" required></select></label>
+                <div class="form-actions modal-form-actions">
+                    <button class="primary-button" type="submit">Set winner</button>
+                    <span id="winner-form-status" class="form-status" role="status"></span>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="vote-modal" class="modal-backdrop" hidden>
         <div class="modal-card glass-panel" role="dialog" aria-modal="true" aria-labelledby="vote-heading">
-            <button id="vote-close" class="icon-button modal-close" type="button" aria-label="Close vote dialog">&times;</button>
-            <div class="eyebrow">Your mark in the archive</div>
+            <button id="vote-close" class="icon-button modal-close" type="button" aria-label="Close voting dialog">&times;</button>
+            <div class="eyebrow">Your mark in the collection</div>
             <h2 id="vote-heading">Rate this dream</h2>
             <p id="vote-story-title" class="modal-story-title"></p>
             <form id="vote-form">
                 <label>Award<select id="vote-award" required></select></label>
                 <label>Points (1–10)<input id="vote-points" type="number" min="1" max="10" value="10" required></label>
-                <button class="primary-button" type="submit">Save my points</button>
+                <button class="primary-button" type="submit">Save points</button>
                 <p id="vote-status" class="form-status" role="status"></p>
             </form>
         </div>
