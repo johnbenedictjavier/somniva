@@ -281,11 +281,43 @@ async function saveStoryComment(body: Record<string, unknown>) {
     const storyId = requiredText(body.story_id, 'Story', 80);
     const commentDate = requiredText(body.comment_date, 'Comment date', 80);
     const comment = requiredText(body.comment, 'Comment', 20000);
+    const comments = await readStoryComments(storyId);
+    comments.push({ date: commentDate, paragraphs: [comment] });
+    return updateStoryComments(storyId, comments);
+}
+
+async function updateStoryComment(body: Record<string, unknown>) {
+    const storyId = requiredText(body.story_id, 'Story', 80);
+    const commentIndex = Number(body.comment_index);
+    const commentDate = requiredText(body.comment_date, 'Comment date', 80);
+    const comment = requiredText(body.comment, 'Comment', 20000);
+    if (!Number.isInteger(commentIndex) || commentIndex < 0) throw new Error('Comment index is invalid.');
+
+    const comments = await readStoryComments(storyId);
+    if (!comments[commentIndex]) throw new Error('Comment was not found.');
+    comments[commentIndex] = { ...comments[commentIndex], date: commentDate, paragraphs: [comment] };
+    return updateStoryComments(storyId, comments);
+}
+
+async function deleteStoryComment(body: Record<string, unknown>) {
+    const storyId = requiredText(body.story_id, 'Story', 80);
+    const commentIndex = Number(body.comment_index);
+    if (!Number.isInteger(commentIndex) || commentIndex < 0) throw new Error('Comment index is invalid.');
+
+    const comments = await readStoryComments(storyId);
+    if (!comments[commentIndex]) throw new Error('Comment was not found.');
+    comments.splice(commentIndex, 1);
+    await updateStoryComments(storyId, comments);
+    return { deleted: true, story_id: storyId, comment_index: commentIndex };
+}
+
+async function readStoryComments(storyId: string) {
     const existing = await admin.from('SM_stories').select('comments').eq('id', storyId).single();
     if (existing.error) throw existing.error;
+    return Array.isArray(existing.data.comments) ? existing.data.comments : [];
+}
 
-    const comments = Array.isArray(existing.data.comments) ? existing.data.comments : [];
-    comments.push({ date: commentDate, paragraphs: [comment] });
+async function updateStoryComments(storyId: string, comments: unknown[]) {
     const result = await admin.from('SM_stories')
         .update({ comments, updated_at: new Date().toISOString() })
         .eq('id', storyId)
@@ -346,6 +378,26 @@ async function removeWinner(body: Record<string, unknown>) {
     return { deleted: true, award_id: awardId, rank };
 }
 
+async function reorderAwards(body: Record<string, unknown>) {
+    if (!Array.isArray(body.award_ids) || !body.award_ids.length) throw new Error('Award order is required.');
+    const awardIds = body.award_ids.map((awardId) => requiredText(awardId, 'Award', 80));
+    if (new Set(awardIds).size !== awardIds.length) throw new Error('Award order contains duplicates.');
+
+    const existing = await admin.from('SM_awards').select('id');
+    if (existing.error) throw existing.error;
+    const existingIds = new Set((existing.data ?? []).map((award) => award.id));
+    if (awardIds.some((awardId) => !existingIds.has(awardId)) || awardIds.length !== existingIds.size) {
+        throw new Error('Award order does not match the collection.');
+    }
+
+    const updates = await Promise.all(awardIds.map((awardId, index) => admin.from('SM_awards')
+        .update({ display_order: index + 1, updated_at: new Date().toISOString() })
+        .eq('id', awardId)));
+    const error = updates.find((result) => result.error)?.error;
+    if (error) throw error;
+    return { ordered: true, award_ids: awardIds };
+}
+
 async function handleAction(action: string, request: Request, body: Record<string, unknown>) {
     // Keep the previous action name valid while installed PWAs receive the new shell.
     if (action === 'collection' || action === 'archive') return collectionPayload();
@@ -354,9 +406,12 @@ async function handleAction(action: string, request: Request, body: Record<strin
     if (action === 'upload-story-image') return uploadStoryImage(request);
     if (action === 'save-story-prompt') return saveStoryPrompt(body);
     if (action === 'save-story-comment') return saveStoryComment(body);
+    if (action === 'update-story-comment') return updateStoryComment(body);
+    if (action === 'delete-story-comment') return deleteStoryComment(body);
     if (action === 'delete-story') return deleteStory(body);
     if (action === 'set-winner') return setWinner(body);
     if (action === 'remove-winner') return removeWinner(body);
+    if (action === 'reorder-awards') return reorderAwards(body);
 
     if (action === 'save-award') {
         const name = requiredText(body.name, 'Award name', 100);

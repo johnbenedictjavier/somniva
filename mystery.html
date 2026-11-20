@@ -46,7 +46,7 @@
 
     <main id="app-container">
         <section id="lock-section" class="lock-section">
-            <div class="lock-card glass-panel depth-card">
+            <div class="lock-content">
                 <img class="lock-logo" src="somniva_logo.png" alt="Somniva logo">
                 <div class="eyebrow">A private atlas of remembered worlds</div>
                 <h1>Somniva</h1>
@@ -64,6 +64,10 @@
                         <button class="primary-button" type="submit">Unlock</button>
                     </div>
                     <p id="unlock-status" class="form-status" role="status"></p>
+                    <div id="unlock-loader" class="unlock-loader" hidden aria-live="polite">
+                        <span class="unlock-loader-ring" aria-hidden="true"></span>
+                        <span class="visually-hidden">Unlocking private collection</span>
+                    </div>
                 </form>
             </div>
         </section>
@@ -118,13 +122,9 @@
                                 <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
                                 <span>Add award</span>
                             </button>
-                            <label class="award-sort-control">Order
-                                <select id="award-sort" aria-label="Arrange awards">
-                                    <option value="asc">First to last</option>
-                                    <option value="desc">Last to first</option>
-                                </select>
-                            </label>
                         </div>
+                        <p class="award-order-help">Drag award names to arrange their order.</p>
+                        <div id="award-order-list" class="award-order-list" aria-label="Drag awards to rearrange"></div>
                     </div>
                     <div id="awards-container" class="awards-container"></div>
                 </div>
@@ -217,7 +217,7 @@
                 <label>Comment date *<input id="comment-date" type="date" required></label>
                 <label>Comment *<textarea id="comment-text" rows="7" required maxlength="20000" placeholder="Write a note about this dream..."></textarea></label>
                 <div class="form-actions modal-form-actions">
-                    <button class="primary-button" type="submit">Save comment</button>
+                    <button class="primary-button" type="submit"><span id="comment-submit-label">Save comment</span></button>
                     <span id="comment-form-status" class="form-status" role="status"></span>
                 </div>
             </form>

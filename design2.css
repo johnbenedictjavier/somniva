@@ -317,16 +317,22 @@ body.locked #app-container {
     place-items: center;
     padding: 24px 13px;
     overflow: hidden;
+    background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0.86) 0%, rgba(0, 0, 0, 0.38) 17%, transparent 42%, transparent 62%, rgba(0, 0, 0, 0.42) 83%, rgba(0, 0, 0, 0.9) 100%),
+        radial-gradient(circle at 50% 43%, rgba(76, 59, 145, 0.22), transparent min(72vw, 560px));
 }
 
 .lock-section::before {
     position: absolute;
+    top: 50%;
+    left: 50%;
     width: min(80vw, 520px);
     height: min(80vw, 520px);
     border: 1px solid rgba(230, 194, 111, 0.15);
     border-radius: 50%;
     box-shadow: 0 0 0 26px rgba(230, 194, 111, 0.035), 0 0 0 76px rgba(198, 201, 255, 0.025);
     content: '';
+    transform: translate(-50%, -50%);
     animation: lock-orbit 18s linear infinite;
     pointer-events: none;
 }
@@ -339,11 +345,11 @@ body.is-unlocked .lock-section {
     pointer-events: none;
 }
 
-body.session-loading .lock-card {
+body.session-loading .lock-content {
     animation: lock-breathe 1.8s ease-in-out infinite;
 }
 
-.lock-card {
+.lock-content {
     position: relative;
     z-index: 1;
     display: grid;
@@ -351,7 +357,6 @@ body.session-loading .lock-card {
     justify-items: center;
     gap: 10px;
     padding: clamp(28px, 7vw, 68px) clamp(20px, 7vw, 64px);
-    border-radius: var(--radius-lg);
     text-align: center;
 }
 
@@ -362,7 +367,7 @@ body.session-loading .lock-card {
     filter: drop-shadow(0 16px 30px rgba(111, 83, 255, 0.22));
 }
 
-.lock-card h1 {
+.lock-content h1 {
     color: var(--gold-bright);
     font-family: 'Cinzel', serif;
     font-size: clamp(2.3rem, 9vw, 4.5rem);
@@ -371,10 +376,27 @@ body.session-loading .lock-card {
 
 .unlock-form {
     display: grid;
-    width: 100%;
+    width: min(100%, 470px);
     gap: 8px;
     margin-top: 14px;
     text-align: left;
+}
+
+.unlock-loader {
+    display: grid;
+    min-height: 30px;
+    place-items: center;
+}
+
+.unlock-loader-ring {
+    display: block;
+    width: 25px;
+    height: 25px;
+    border: 2px solid rgba(230, 194, 111, 0.25);
+    border-top-color: var(--gold-bright);
+    border-right-color: var(--lavender);
+    border-radius: 50%;
+    animation: unlock-spin 720ms linear infinite;
 }
 
 .unlock-form > label,
@@ -851,29 +873,64 @@ label {
     margin-top: 19px;
 }
 
-.award-sort-control {
-    display: flex;
-    min-height: 42px;
-    align-items: center;
-    gap: 8px;
-    padding: 0 8px 0 13px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.04);
+.award-order-help {
+    margin: 18px auto 10px;
     color: var(--muted);
     font-size: 0.72rem;
-    font-weight: 700;
 }
 
-.award-sort-control select {
-    min-height: 32px;
-    padding: 5px 23px 5px 7px;
-    border: 0;
+.award-order-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    min-height: 38px;
+    transition: opacity 180ms ease;
+}
+
+.award-order-list.is-saving {
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.award-order-item {
+    display: inline-flex;
+    min-height: 38px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 13px 8px 10px;
+    border: 1px solid rgba(230, 194, 111, 0.35);
     border-radius: 999px;
-    outline: 0;
-    background: rgba(2, 5, 14, 0.28);
+    background: rgba(255, 255, 255, 0.05);
     color: var(--gold-bright);
-    font-size: 0.72rem;
+    cursor: grab;
+    font-size: 0.75rem;
+    font-weight: 700;
+    touch-action: none;
+    user-select: none;
+    transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, opacity 180ms ease;
+}
+
+.award-order-item:hover {
+    border-color: var(--gold);
+    background: rgba(230, 194, 111, 0.13);
+    transform: translateY(-2px);
+}
+
+.award-order-item.is-dragging {
+    opacity: 0.35;
+    cursor: grabbing;
+}
+
+.award-drag-handle {
+    color: var(--gold);
+    font-size: 1rem;
+    letter-spacing: -0.18em;
+    line-height: 1;
+}
+
+.award-order-name {
+    overflow-wrap: anywhere;
 }
 
 .category-group {
@@ -1338,6 +1395,52 @@ label {
     background: rgba(67, 77, 136, 0.17);
 }
 
+.comment-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.comment-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 5px;
+}
+
+.comment-action {
+    display: inline-grid;
+    width: 27px;
+    height: 27px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid rgba(198, 201, 255, 0.28);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--lavender);
+    transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.comment-action:hover {
+    border-color: var(--gold);
+    background: rgba(230, 194, 111, 0.13);
+    transform: translateY(-1px);
+}
+
+.comment-action.comment-delete {
+    color: var(--danger);
+}
+
+.comment-action-icon {
+    width: 13px;
+    height: 13px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+}
+
 .comment h3 {
     margin-bottom: 4px;
     font-family: 'DM Sans', sans-serif;
@@ -1469,10 +1572,9 @@ label textarea {
 }
 
 #paragraph-list {
-    padding: 13px;
-    border: 1px solid rgba(198, 201, 255, 0.17);
-    border-radius: 17px;
-    background: rgba(9, 10, 31, 0.28);
+    padding: 0;
+    border: 0;
+    background: transparent;
 }
 
 #paragraph-list textarea,
@@ -1491,10 +1593,7 @@ label textarea {
 }
 
 .paragraph-row {
-    padding: 9px;
-    border: 1px solid rgba(198, 201, 255, 0.12);
-    border-radius: 13px;
-    background: rgba(255, 255, 255, 0.025);
+    min-width: 0;
 }
 
 label input:focus,
@@ -1537,13 +1636,18 @@ label select:focus {
 
 .paragraph-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 36px;
-    gap: 9px;
+    grid-template-columns: minmax(0, 1fr) 30px;
+    gap: 7px;
     align-items: start;
 }
 
 .remove-paragraph {
-    margin-top: 6px;
+    width: 28px;
+    height: 28px;
+    margin-top: 8px;
+    border-color: rgba(255, 173, 183, 0.3);
+    color: var(--danger);
+    font-size: 0.95rem;
 }
 
 .image-prompt-output {
@@ -1939,7 +2043,8 @@ label select:focus {
 }
 
 @keyframes lock-orbit {
-    to { transform: rotate(360deg); }
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
 @keyframes loading-sheen {
@@ -1952,6 +2057,10 @@ label select:focus {
 
 @keyframes button-spin {
     to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes unlock-spin {
+    to { transform: rotate(360deg); }
 }
 
 @keyframes search-pulse {

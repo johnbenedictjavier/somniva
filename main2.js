@@ -11,9 +11,9 @@ const state = {
     voteTotals: [],
     currentPage: 1,
     itemsPerPage: 8,
-    awardSort: 'asc',
     currentStory: null,
     commentStory: null,
+    editingComment: null,
     editingStory: null,
     winnerSlot: null,
     winnerCandidateIndex: 0,
@@ -21,6 +21,11 @@ const state = {
     searchQuery: '',
     modalScrollY: 0,
     unlockTimer: null,
+    dragAwardId: null,
+    awardPointerId: null,
+    awardPointerAwardId: null,
+    awardPointerStartY: 0,
+    awardPointerMoved: false,
     deferredInstallPrompt: null,
     previewUrl: '',
     promptStory: null,
@@ -70,6 +75,7 @@ async function init() {
 
     document.body.classList.add('session-loading');
     setAppLoading(true);
+    setUnlockLoading(true);
     $('#unlock-status').textContent = 'Restoring your private session...';
     try {
         const collection = await apiRequest('collection');
@@ -87,10 +93,6 @@ function bindEvents() {
     $('#toggle-password')?.addEventListener('click', togglePasswordVisibility);
     $('#add-dream-button')?.addEventListener('click', openStoryModal);
     $('#add-award-button')?.addEventListener('click', openAwardModal);
-    $('#award-sort')?.addEventListener('change', (event) => {
-        state.awardSort = event.target.value === 'desc' ? 'desc' : 'asc';
-        renderAwards();
-    });
     $('#story-modal-close')?.addEventListener('click', () => closeModal('story-modal'));
     $('#comment-modal-close')?.addEventListener('click', () => closeModal('comment-modal'));
     $('#prompt-modal-close')?.addEventListener('click', () => closeModal('prompt-modal'));
@@ -115,6 +117,14 @@ function bindEvents() {
     $('#story-search-form')?.addEventListener('submit', handleSearchSubmit);
     $('#story-search-input')?.addEventListener('input', handleSearchInput);
     $('#story-search-clear')?.addEventListener('click', clearStorySearch);
+    $('#award-order-list')?.addEventListener('dragstart', handleAwardDragStart);
+    $('#award-order-list')?.addEventListener('dragover', handleAwardDragOver);
+    $('#award-order-list')?.addEventListener('drop', handleAwardDrop);
+    $('#award-order-list')?.addEventListener('dragend', handleAwardDragEnd);
+    $('#award-order-list')?.addEventListener('pointerdown', handleAwardPointerDown);
+    $('#award-order-list')?.addEventListener('pointermove', handleAwardPointerMove, { passive: false });
+    $('#award-order-list')?.addEventListener('pointerup', handleAwardPointerUp);
+    $('#award-order-list')?.addEventListener('pointercancel', handleAwardPointerUp);
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             const openModalElement = $('.modal-backdrop:not([hidden])');
@@ -150,6 +160,20 @@ function bindEvents() {
         if (commentButton) {
             event.stopPropagation();
             openCommentModal(commentButton.dataset.commentStory);
+            return;
+        }
+
+        const editCommentButton = event.target.closest('[data-edit-comment]');
+        if (editCommentButton) {
+            event.stopPropagation();
+            openEditComment(editCommentButton.dataset.storyId, Number(editCommentButton.dataset.commentIndex));
+            return;
+        }
+
+        const deleteCommentButton = event.target.closest('[data-delete-comment]');
+        if (deleteCommentButton) {
+            event.stopPropagation();
+            deleteComment(deleteCommentButton.dataset.storyId, Number(deleteCommentButton.dataset.commentIndex));
             return;
         }
 
@@ -211,9 +235,11 @@ function bindEvents() {
         const rows = $$('.paragraph-row');
         if (rows.length <= 1) {
             rows[0].querySelector('textarea').value = '';
+            syncParagraphRequirements();
             return;
         }
         event.target.closest('.paragraph-row').remove();
+        syncParagraphRequirements();
     });
     $('#story-form')?.addEventListener('submit', handleStorySubmit);
     $('#story-page-choice')?.addEventListener('change', updatePlacementPreview);
@@ -252,11 +278,8 @@ async function apiRequest(action, payload = {}) {
 async function handleUnlock(event) {
     event.preventDefault();
     const status = $('#unlock-status');
-    const button = $('#unlock-form button');
     status.textContent = 'Unlocking...';
-    button.disabled = true;
-    button.classList.add('is-loading');
-    button.setAttribute('aria-busy', 'true');
+    setUnlockLoading(true);
     document.body.classList.add('is-unlocking');
 
     try {
@@ -271,10 +294,20 @@ async function handleUnlock(event) {
         status.textContent = error.message || 'Somniva remains hidden.';
         document.body.classList.remove('is-unlocking');
     } finally {
-        button.disabled = false;
-        button.classList.remove('is-loading');
-        button.removeAttribute('aria-busy');
+        setUnlockLoading(false);
     }
+}
+
+function setUnlockLoading(isLoading) {
+    const button = $('#unlock-form button[type="submit"]');
+    const loader = $('#unlock-loader');
+    if (button) {
+        button.disabled = isLoading;
+        button.classList.toggle('is-loading', isLoading);
+        if (isLoading) button.setAttribute('aria-busy', 'true');
+        else button.removeAttribute('aria-busy');
+    }
+    if (loader) loader.hidden = !isLoading;
 }
 
 function togglePasswordVisibility() {
@@ -301,6 +334,7 @@ function unlockApp() {
     $('#add-dream-button').hidden = false;
     $('#install-button').hidden = !state.deferredInstallPrompt;
     $('#unlock-status').textContent = '';
+    setUnlockLoading(false);
     state.unlockTimer = window.setTimeout(() => {
         lockSection.hidden = true;
         lockSection.removeAttribute('aria-hidden');
@@ -320,6 +354,7 @@ function showLockScreen() {
     $('#main-nav').hidden = true;
     $('#bottom-nav').hidden = true;
     setAppLoading(false);
+    setUnlockLoading(false);
 }
 
 function lockApp(message = '') {
@@ -373,6 +408,7 @@ function renderAll() {
 
 function renderHome() {
     const recentContainer = $('#recent-dream-content');
+    renderHomeMarquee();
     if (!recentContainer) return;
 
     recentContainer.classList.remove('loading-copy');
@@ -397,7 +433,6 @@ function renderHome() {
         recentContainer.append(title, date, excerpt, button);
     }
 
-    renderHomeMarquee();
 }
 
 function renderHomeMarquee() {
@@ -413,14 +448,14 @@ function renderHomeMarquee() {
     }
 
     const track = document.createElement('div');
-    track.className = `marquee-track${firstPlaces.length > 1 ? ' is-looping' : ''}`;
-    const items = firstPlaces.length > 1 ? [...firstPlaces, ...firstPlaces] : firstPlaces;
+    track.className = 'marquee-track is-looping';
+    const items = [...firstPlaces, ...firstPlaces];
     items.forEach(({ award, story }, index) => {
         const card = document.createElement('button');
         card.className = 'marquee-card';
         card.type = 'button';
         card.dataset.storyLink = story.link;
-        if (index >= firstPlaces.length && firstPlaces.length > 1) {
+        if (index >= firstPlaces.length) {
             card.setAttribute('aria-hidden', 'true');
             card.tabIndex = -1;
         }
@@ -437,15 +472,25 @@ function renderHomeMarquee() {
 }
 
 function getFirstPlaceItems() {
-    return orderedAwards()
+    const firstPlaces = orderedAwards()
         .map((award) => {
             const winner = state.winners.find((item) => item.award_id === award.id && Number(item.rank) === 1);
             return winner ? { winner, award, story: getStory(winner.story_id) } : null;
         })
         .filter((item) => item?.story);
+    if (firstPlaces.length) return firstPlaces;
+
+    return orderedAwards()
+        .flatMap((award) => state.winners
+            .filter((winner) => winner.award_id === award.id)
+            .sort((a, b) => Number(a.rank) - Number(b.rank))
+            .map((winner) => ({ winner, award, story: getStory(winner.story_id) })))
+        .filter((item) => item.story)
+        .slice(0, 12);
 }
 
 function renderAwards() {
+    renderAwardOrder();
     const container = $('#awards-container');
     if (!container) return;
     container.replaceChildren();
@@ -475,6 +520,120 @@ function renderAwards() {
         group.append(heading, description, podium);
         container.append(group);
     });
+}
+
+function renderAwardOrder() {
+    const list = $('#award-order-list');
+    if (!list) return;
+    list.replaceChildren();
+    list.hidden = !state.awards.length;
+    orderedAwards().forEach((award) => {
+        const item = document.createElement('div');
+        item.className = 'award-order-item';
+        item.draggable = true;
+        item.dataset.awardId = award.id;
+        item.setAttribute('role', 'listitem');
+        item.innerHTML = `<span class="award-drag-handle" aria-hidden="true">⋮⋮</span><span class="award-order-name"></span>`;
+        item.querySelector('.award-order-name').textContent = award.name;
+        list.append(item);
+    });
+}
+
+function handleAwardDragStart(event) {
+    const item = event.target.closest('.award-order-item');
+    if (!item) return;
+    state.dragAwardId = item.dataset.awardId;
+    item.classList.add('is-dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', state.dragAwardId);
+}
+
+function handleAwardDragOver(event) {
+    const list = $('#award-order-list');
+    const item = event.target.closest('.award-order-item');
+    if (!list || !item || !state.dragAwardId || item.dataset.awardId === state.dragAwardId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    moveAwardItem(event.clientY, item);
+}
+
+function moveAwardItem(clientY, item) {
+    const list = $('#award-order-list');
+    const dragged = [...list.children].find((candidate) => candidate.dataset.awardId === state.dragAwardId);
+    if (!dragged || dragged === item) return;
+    const midpoint = item.getBoundingClientRect().top + item.getBoundingClientRect().height / 2;
+    list.insertBefore(dragged, clientY < midpoint ? item : item.nextSibling);
+}
+
+function handleAwardDrop(event) {
+    if (!state.dragAwardId) return;
+    event.preventDefault();
+    const list = $('#award-order-list');
+    const awardIds = [...list.querySelectorAll('.award-order-item')].map((item) => item.dataset.awardId);
+    const currentIds = orderedAwards().map((award) => award.id);
+    if (awardIds.join('|') !== currentIds.join('|')) persistAwardOrder(awardIds);
+}
+
+function handleAwardDragEnd() {
+    $$('.award-order-item').forEach((item) => item.classList.remove('is-dragging', 'is-over'));
+    state.dragAwardId = null;
+}
+
+function handleAwardPointerDown(event) {
+    if (event.pointerType === 'mouse') return;
+    const item = event.target.closest('.award-order-item');
+    if (!item) return;
+    state.awardPointerId = event.pointerId;
+    state.awardPointerAwardId = item.dataset.awardId;
+    state.awardPointerStartY = event.clientY;
+    state.awardPointerMoved = false;
+    item.setPointerCapture?.(event.pointerId);
+}
+
+function handleAwardPointerMove(event) {
+    if (state.awardPointerId !== event.pointerId) return;
+    const item = event.target.closest('.award-order-item');
+    if (!item) return;
+    if (!state.awardPointerMoved && Math.abs(event.clientY - state.awardPointerStartY) < 6) return;
+    state.awardPointerMoved = true;
+    state.dragAwardId = state.awardPointerAwardId;
+    const list = $('#award-order-list');
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.award-order-item');
+    if (!list?.contains(target)) return;
+    event.preventDefault();
+    item.classList.add('is-dragging');
+    moveAwardItem(event.clientY, target);
+}
+
+function handleAwardPointerUp(event) {
+    if (state.awardPointerId !== event.pointerId) return;
+    const list = $('#award-order-list');
+    if (state.awardPointerMoved && list && state.dragAwardId) {
+        const awardIds = [...list.querySelectorAll('.award-order-item')].map((item) => item.dataset.awardId);
+        const currentIds = orderedAwards().map((award) => award.id);
+        if (awardIds.join('|') !== currentIds.join('|')) persistAwardOrder(awardIds);
+    }
+    handleAwardDragEnd();
+    state.awardPointerId = null;
+    state.awardPointerAwardId = null;
+    state.awardPointerMoved = false;
+}
+
+async function persistAwardOrder(awardIds) {
+    const list = $('#award-order-list');
+    list?.classList.add('is-saving');
+    try {
+        await apiRequest('reorder-awards', { award_ids: awardIds });
+        const order = new Map(awardIds.map((id, index) => [id, index + 1]));
+        state.awards.forEach((award) => { award.display_order = order.get(award.id); });
+        renderAwards();
+        showToast('Award order saved.');
+    } catch (error) {
+        showToast(error.message || 'Unable to save award order.');
+        await loadCollection(false);
+    } finally {
+        list?.classList.remove('is-saving');
+    }
 }
 
 function createWinnerCard(story, rank, awardId) {
@@ -790,12 +949,21 @@ function createStoryArticle(story) {
     });
 
     article.append(topLine, picture, title, date, paragraphs);
-    story.comments.forEach((comment) => {
+    story.comments.forEach((comment, index) => {
         const commentCard = document.createElement('div');
         commentCard.className = 'comment';
+        const commentHeader = document.createElement('div');
+        commentHeader.className = 'comment-header';
         const commentDate = document.createElement('h3');
         commentDate.textContent = formatCommentDate(comment.date);
-        commentCard.append(commentDate);
+        const commentActions = document.createElement('div');
+        commentActions.className = 'comment-actions';
+        commentActions.append(
+            createCommentAction('edit', 'Edit comment', story.id, index),
+            createCommentAction('delete', 'Delete comment', story.id, index),
+        );
+        commentHeader.append(commentDate, commentActions);
+        commentCard.append(commentHeader);
         (comment.paragraphs || []).forEach((content) => {
             const paragraph = document.createElement('p');
             paragraph.innerHTML = sanitizeHtml(content);
@@ -805,6 +973,19 @@ function createStoryArticle(story) {
     });
 
     return article;
+}
+
+function createCommentAction(icon, label, storyId, commentIndex) {
+    const button = document.createElement('button');
+    button.className = `comment-action ${icon === 'delete' ? 'comment-delete' : ''}`.trim();
+    button.type = 'button';
+    button.dataset[icon === 'delete' ? 'deleteComment' : 'editComment'] = 'true';
+    button.dataset.storyId = storyId;
+    button.dataset.commentIndex = String(commentIndex);
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    button.innerHTML = `<svg class="comment-action-icon" viewBox="0 0 24 24" aria-hidden="true">${iconMarkup[icon]}</svg><span class="visually-hidden">${label}</span>`;
+    return button;
 }
 
 function createStoryToolButton(icon, label, dataKey, storyId, extraClass = '') {
@@ -1008,14 +1189,16 @@ async function handleCommentSubmit(event) {
     }
     status.textContent = 'Saving comment...';
     setButtonLoading(submitButton, true);
+    const editing = state.editingComment;
     try {
-        await apiRequest('save-story-comment', {
+        await apiRequest(editing ? 'update-story-comment' : 'save-story-comment', {
             story_id: state.commentStory.id,
+            ...(editing ? { comment_index: editing.index } : {}),
             comment_date: date,
             comment,
         });
         closeModal('comment-modal');
-        showToast('Comment added.');
+        showToast(editing ? 'Comment updated.' : 'Comment added.');
         await loadCollection(false);
     } catch (error) {
         status.textContent = error.message || 'Unable to save the comment.';
@@ -1033,6 +1216,19 @@ async function deleteStory(storyId) {
         await loadCollection(false);
     } catch (error) {
         showToast(error.message || 'Unable to delete the dream.');
+    }
+}
+
+async function deleteComment(storyId, commentIndex) {
+    const story = getStory(storyId);
+    const comment = story?.comments?.[commentIndex];
+    if (!story || !comment || !window.confirm('Delete this comment permanently?')) return;
+    try {
+        await apiRequest('delete-story-comment', { story_id: story.id, comment_index: commentIndex });
+        showToast('Comment deleted.');
+        await loadCollection(false);
+    } catch (error) {
+        showToast(error.message || 'Unable to delete the comment.');
     }
 }
 
@@ -1054,6 +1250,13 @@ function addParagraphRow(value = '') {
     remove.textContent = '×';
     row.append(textarea, remove);
     list.append(row);
+    syncParagraphRequirements();
+}
+
+function syncParagraphRequirements() {
+    $$('#paragraph-list textarea').forEach((textarea, index) => {
+        textarea.required = index === 0;
+    });
 }
 
 function openPromptModal(storyId) {
@@ -1202,12 +1405,38 @@ function openCommentModal(storyId) {
     const story = getStory(storyId);
     if (!story) return;
     state.commentStory = story;
+    state.editingComment = null;
     $('#comment-story-title').textContent = `${story.title} · ${story.link}`;
+    $('#comment-heading').textContent = 'Add a comment';
+    $('#comment-submit-label').textContent = 'Save comment';
     $('#comment-date').value = new Date().toISOString().slice(0, 10);
     $('#comment-text').value = '';
     $('#comment-form-status').textContent = '';
     openModal('comment-modal');
     $('#comment-text').focus();
+}
+
+function openEditComment(storyId, commentIndex) {
+    const story = getStory(storyId);
+    const comment = story?.comments?.[commentIndex];
+    if (!story || !comment) return;
+    state.commentStory = story;
+    state.editingComment = { index: commentIndex };
+    $('#comment-story-title').textContent = `${story.title} · ${story.link}`;
+    $('#comment-heading').textContent = 'Edit comment';
+    $('#comment-submit-label').textContent = 'Save changes';
+    $('#comment-date').value = commentDateInputValue(comment.date);
+    $('#comment-text').value = (comment.paragraphs || []).join('\n\n');
+    $('#comment-form-status').textContent = '';
+    openModal('comment-modal');
+    $('#comment-text').focus();
+}
+
+function commentDateInputValue(value) {
+    const text = String(value || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10);
 }
 
 function openAwardModal() {
@@ -1254,7 +1483,10 @@ function closeModal(id) {
         window.scrollTo(0, state.modalScrollY);
     }
     if (id === 'vote-modal') state.currentStory = null;
-    if (id === 'comment-modal') state.commentStory = null;
+    if (id === 'comment-modal') {
+        state.commentStory = null;
+        state.editingComment = null;
+    }
     if (id === 'prompt-modal') state.promptStory = null;
     if (id === 'winner-modal') state.winnerSlot = null;
     if (id === 'image-modal') {
@@ -1271,6 +1503,7 @@ function closeAllModals() {
     window.scrollTo(0, state.modalScrollY);
     state.currentStory = null;
     state.commentStory = null;
+    state.editingComment = null;
     state.promptStory = null;
     state.imageStory = null;
     state.editingStory = null;
@@ -1469,8 +1702,7 @@ function sortByTitle(stories) {
 }
 
 function orderedAwards() {
-    const awards = [...state.awards].sort((a, b) => Number(a.display_order) - Number(b.display_order) || titleCollator.compare(a.name, b.name));
-    return state.awardSort === 'desc' ? awards.reverse() : awards;
+    return [...state.awards].sort((a, b) => Number(a.display_order) - Number(b.display_order) || titleCollator.compare(a.name, b.name));
 }
 
 function getStory(id) {
