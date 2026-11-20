@@ -247,11 +247,24 @@ async function uploadStoryImage(request: Request) {
     return update.data;
 }
 
+async function saveStoryPrompt(body: Record<string, unknown>) {
+    const storyId = requiredText(body.story_id, 'Story', 80);
+    const prompt = requiredText(body.image_prompt, 'Image prompt', 12000);
+    const result = await admin.from('SM_stories')
+        .update({ image_prompt: prompt })
+        .eq('id', storyId)
+        .select('*')
+        .single();
+    if (result.error) throw result.error;
+    return result.data;
+}
+
 async function handleAction(action: string, request: Request, body: Record<string, unknown>) {
     // Keep the previous action name valid while installed PWAs receive the new shell.
     if (action === 'collection' || action === 'archive') return collectionPayload();
     if (action === 'save-story') return saveStory(request);
     if (action === 'upload-story-image') return uploadStoryImage(request);
+    if (action === 'save-story-prompt') return saveStoryPrompt(body);
 
     if (action === 'save-award') {
         const name = requiredText(body.name, 'Award name', 100);

@@ -107,6 +107,14 @@ img {
     -webkit-backdrop-filter: blur(24px) saturate(145%);
 }
 
+.top-nav > * {
+    min-width: 0;
+}
+
+.nav-actions {
+    flex: 0 0 auto;
+}
+
 .brand {
     display: grid;
     grid-template-columns: 32px auto;
@@ -165,7 +173,7 @@ img {
 .app-section {
     display: none;
     min-height: calc(100dvh - var(--top-height));
-    padding: clamp(22px, 5vw, 54px) clamp(12px, 5vw, 72px) calc(var(--bottom-height) + 34px);
+    padding: clamp(22px, 5vw, 54px) clamp(12px, 5vw, 72px) calc(var(--bottom-height) + 34px + env(safe-area-inset-bottom));
 }
 
 .app-section.active {
@@ -186,6 +194,18 @@ body.locked #app-container {
     min-height: 100dvh;
     place-items: center;
     padding: 24px 13px;
+}
+
+body.is-unlocked .lock-section {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    animation: lock-out 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    pointer-events: none;
+}
+
+body.session-loading .lock-card {
+    animation: lock-breathe 1.8s ease-in-out infinite;
 }
 
 .lock-card {
@@ -272,7 +292,8 @@ label {
 .home-shell {
     display: grid;
     gap: 20px;
-    padding-top: clamp(4px, 4vh, 48px);
+    min-width: 0;
+    padding-top: clamp(0px, 2.5vh, 28px);
 }
 
 .hero-card {
@@ -280,7 +301,7 @@ label {
     display: grid;
     justify-items: center;
     gap: 12px;
-    min-height: min(500px, 67dvh);
+    min-height: clamp(420px, 62dvh, 540px);
     align-content: center;
     padding: clamp(28px, 7vw, 78px);
     overflow: hidden;
@@ -300,6 +321,12 @@ label {
     box-shadow: 0 0 0 20px rgba(230, 194, 111, 0.04), 0 0 0 50px rgba(230, 194, 111, 0.03);
     content: '';
     pointer-events: none;
+    z-index: 0;
+}
+
+.hero-card > * {
+    position: relative;
+    z-index: 1;
 }
 
 .hero-logo {
@@ -459,8 +486,12 @@ label {
     gap: 20px;
 }
 
+.home-grid > * {
+    min-width: 0;
+}
+
 .feature-card {
-    min-height: 230px;
+    min-height: 0;
     padding: clamp(21px, 4vw, 34px);
     border-radius: var(--radius-md);
 }
@@ -491,6 +522,20 @@ label {
     color: var(--muted);
     font-size: 0.84rem;
     line-height: 1.6;
+}
+
+.loading-copy {
+    position: relative;
+    overflow: hidden;
+}
+
+.loading-copy::after {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 25%, rgba(255, 255, 255, 0.1) 48%, transparent 70%);
+    content: '';
+    transform: translateX(-100%);
+    animation: loading-sheen 1.6s ease-in-out infinite;
 }
 
 .status-message {
@@ -892,21 +937,48 @@ label {
 
 .story-actions {
     display: flex;
+    min-width: 0;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 10px;
+}
+
+.story-tool-button {
+    min-width: 0;
+    min-height: 34px;
+    padding: 7px 11px;
+    border: 1px solid rgba(230, 194, 111, 0.36);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.045);
+    color: var(--gold-bright);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: normal;
+    line-height: 1.1;
+    text-transform: none;
+    transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.story-tool-button:hover {
+    background: rgba(230, 194, 111, 0.14);
+    border-color: var(--gold);
+    transform: translateY(-2px);
+}
+
+.prompt-tool {
+    border-color: rgba(198, 201, 255, 0.42);
+    color: var(--lavender);
+}
+
+.upload-tool {
+    border-color: rgba(165, 232, 203, 0.34);
+    color: var(--success);
 }
 
 .vote-button {
     min-height: 34px;
     padding: 7px 12px;
     font-size: 0.66rem;
-    letter-spacing: normal;
-    text-transform: none;
-}
-
-.story-cover-action {
-    font-size: 0.68rem;
     letter-spacing: normal;
     text-transform: none;
 }
@@ -1023,6 +1095,7 @@ label {
     overflow-y: auto;
     padding: clamp(25px, 5vw, 34px);
     border-radius: var(--radius-md);
+    isolation: isolate;
     animation: modal-in 360ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
 }
 
@@ -1161,6 +1234,23 @@ label select:focus {
     background: rgba(67, 77, 136, 0.13);
 }
 
+.prompt-modal-content {
+    min-width: 0;
+}
+
+.upload-panel {
+    display: grid;
+    gap: 15px;
+}
+
+.upload-panel input[type='file'] {
+    min-height: 48px;
+    padding: 13px;
+    border-style: dashed;
+    border-color: rgba(230, 194, 111, 0.38);
+    background: rgba(230, 194, 111, 0.06);
+}
+
 .prompt-heading {
     align-items: flex-start;
 }
@@ -1198,12 +1288,6 @@ label select:focus {
     z-index: 1;
     padding-top: 12px;
     background: linear-gradient(transparent, rgba(35, 30, 71, 0.98) 35%);
-}
-
-.post-save-step {
-    display: grid;
-    gap: 13px;
-    animation: rise-in 360ms ease both;
 }
 
 .story-upload-preview {
@@ -1296,6 +1380,100 @@ label select:focus {
     transform: translate(50%, 0);
 }
 
+.app-loading {
+    position: fixed;
+    inset: var(--top-height) 0 calc(var(--bottom-height) + env(safe-area-inset-bottom));
+    z-index: 25;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 14px;
+    background: rgba(15, 12, 41, 0.52);
+    color: var(--gold-bright);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.app-loading p {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    font-style: italic;
+}
+
+.loading-orbit {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    border: 1px solid rgba(230, 194, 111, 0.35);
+    border-radius: 50%;
+    animation: orbit-spin 1.7s linear infinite;
+}
+
+.loading-orbit::before,
+.loading-orbit::after,
+.loading-orbit span {
+    position: absolute;
+    display: block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--gold-bright);
+    box-shadow: 0 0 15px rgba(255, 231, 167, 0.7);
+    content: '';
+}
+
+.loading-orbit::before {
+    top: -4px;
+    left: 20px;
+}
+
+.loading-orbit::after {
+    right: 1px;
+    bottom: 7px;
+    background: var(--lavender);
+}
+
+.loading-orbit span:nth-child(1) {
+    bottom: -3px;
+    left: 11px;
+    background: var(--success);
+}
+
+.loading-orbit span:nth-child(2) {
+    top: 15px;
+    right: -4px;
+    width: 5px;
+    height: 5px;
+}
+
+.loading-orbit span:nth-child(3) {
+    top: 12px;
+    left: -3px;
+    width: 5px;
+    height: 5px;
+    background: var(--lavender);
+}
+
+.primary-button.is-loading {
+    position: relative;
+    color: transparent;
+    pointer-events: none;
+}
+
+.primary-button.is-loading::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(23, 19, 33, 0.28);
+    border-top-color: #171321;
+    border-radius: 50%;
+    content: '';
+    transform: translate(-50%, -50%);
+    animation: button-spin 700ms linear infinite;
+}
+
 @keyframes section-in {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
@@ -1309,6 +1487,28 @@ label select:focus {
 @keyframes modal-in {
     from { opacity: 0; transform: translateY(18px) scale(0.97); }
     to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes lock-out {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(1.04); }
+}
+
+@keyframes lock-breathe {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+}
+
+@keyframes loading-sheen {
+    to { transform: translateX(100%); }
+}
+
+@keyframes orbit-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes button-spin {
+    to { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
 @keyframes marquee {
@@ -1474,12 +1674,19 @@ label select:focus {
     }
 
     .story-topline {
-        align-items: flex-start;
+        align-items: stretch;
+        flex-direction: column;
         letter-spacing: 0.1em;
     }
 
     .story-actions {
+        justify-content: flex-start;
+        width: 100%;
         gap: 7px;
+    }
+
+    .story-tool-button {
+        flex: 1 1 auto;
     }
 
     .story-image {
@@ -1523,6 +1730,10 @@ label select:focus {
     .modal-form-actions .primary-button,
     .modal-form-actions .ghost-button {
         flex: 1 1 auto;
+    }
+
+    .app-loading {
+        inset: var(--top-height) 0 calc(var(--bottom-height) + env(safe-area-inset-bottom));
     }
 
     .floating-nav {

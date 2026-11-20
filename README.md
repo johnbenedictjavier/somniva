@@ -43,12 +43,12 @@ The function uses Supabase's server-side `SUPABASE_SERVICE_ROLE_KEY` automatical
 ## Image Workflow
 
 1. Open Add dream after unlocking Somniva.
-2. Enter the title and paragraphs.
+2. Enter the title, date, and paragraphs.
 3. Choose whether the dream opens a new page or joins an existing page. The page number and link are generated automatically.
-4. Select **Generate prompt**.
-5. Copy the fixed Somniva prompt into any image-generation tool.
-6. Create the dream first, then upload the generated cover image in the next step or later from Stories.
-7. The prompt and image are stored in private Supabase storage/database records.
+4. Create the dream without an image.
+5. From the dream's story card, choose **Generate** to create and copy the fixed Somniva prompt.
+6. Use **Upload photo** beside the story to add or replace its private cover image later.
+7. The copied prompt and uploaded image are stored in private Supabase records/storage.
 
 The generator always uses the same cinematic surreal dream-journal style: indigo, violet, midnight blue, moonlight, symbolic atmosphere, painterly realism, softly blurred unrecognizable faces, and no text or watermarks.
 

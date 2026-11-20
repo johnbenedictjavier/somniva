@@ -14,7 +14,8 @@ const state = {
     currentStory: null,
     deferredInstallPrompt: null,
     previewUrl: '',
-    pendingStoryForImage: null,
+    promptStory: null,
+    imageStory: null,
 };
 
 const romanNumerals = [
@@ -49,12 +50,16 @@ async function init() {
         return;
     }
 
+    document.body.classList.add('session-loading');
+    $('#unlock-status').textContent = 'Opening your private collection...';
     try {
         const collection = await apiRequest('collection');
         unlockApp();
         applyCollection(collection);
     } catch {
         lockApp('Your private session expired. Unlock Somniva again.');
+    } finally {
+        document.body.classList.remove('session-loading');
     }
 }
 
@@ -64,6 +69,8 @@ function bindEvents() {
     $('#add-award-button')?.addEventListener('click', openAwardModal);
     $('#manage-winners-button')?.addEventListener('click', openWinnerModal);
     $('#story-modal-close')?.addEventListener('click', () => closeModal('story-modal'));
+    $('#prompt-modal-close')?.addEventListener('click', () => closeModal('prompt-modal'));
+    $('#image-modal-close')?.addEventListener('click', () => closeModal('image-modal'));
     $('#award-modal-close')?.addEventListener('click', () => closeModal('award-modal'));
     $('#winner-modal-close')?.addEventListener('click', () => closeModal('winner-modal'));
     $('#vote-close')?.addEventListener('click', () => closeModal('vote-modal'));
@@ -72,6 +79,20 @@ function bindEvents() {
         const sectionButton = event.target.closest('[data-section]');
         if (sectionButton) {
             showSection(sectionButton.dataset.section);
+            return;
+        }
+
+        const promptButton = event.target.closest('[data-generate-story]');
+        if (promptButton) {
+            event.stopPropagation();
+            openPromptModal(promptButton.dataset.generateStory);
+            return;
+        }
+
+        const uploadButton = event.target.closest('[data-upload-story]');
+        if (uploadButton) {
+            event.stopPropagation();
+            openImageUpload(uploadButton.dataset.uploadStory);
             return;
         }
 
@@ -88,11 +109,6 @@ function bindEvents() {
             return;
         }
 
-        const uploadButton = event.target.closest('[data-upload-story]');
-        if (uploadButton) {
-            event.stopPropagation();
-            openImageUpload(uploadButton.dataset.uploadStory);
-        }
     });
 
     $$('.modal-backdrop').forEach((modal) => {
@@ -112,16 +128,13 @@ function bindEvents() {
             return;
         }
         event.target.closest('.paragraph-row').remove();
-        updateImagePromptIfVisible();
     });
     $('#story-form')?.addEventListener('submit', handleStorySubmit);
-    $('#story-form')?.addEventListener('input', updateImagePromptIfVisible);
     $('#story-page-choice')?.addEventListener('change', updatePlacementPreview);
     $('#generate-image-prompt')?.addEventListener('click', generateImagePrompt);
     $('#copy-image-prompt')?.addEventListener('click', copyImagePrompt);
     $('#story-image-file')?.addEventListener('change', handlePostImageSelection);
     $('#upload-story-image')?.addEventListener('click', handleStoryImageUpload);
-    $('#skip-story-image')?.addEventListener('click', skipStoryImage);
     $('#award-form')?.addEventListener('submit', handleAwardSubmit);
     $('#winner-form')?.addEventListener('submit', handleWinnerSubmit);
     $('#vote-form')?.addEventListener('submit', handleVoteSubmit);
@@ -157,6 +170,9 @@ async function handleUnlock(event) {
     const button = $('#unlock-form button');
     status.textContent = 'Unlocking...';
     button.disabled = true;
+    button.classList.add('is-loading');
+    button.setAttribute('aria-busy', 'true');
+    document.body.classList.add('is-unlocking');
 
     try {
         const result = await apiRequest('unlock', { password: $('#unlock-password').value });
@@ -168,27 +184,40 @@ async function handleUnlock(event) {
         $('#unlock-password').value = '';
     } catch (error) {
         status.textContent = error.message || 'Somniva remains hidden.';
+        document.body.classList.remove('is-unlocking');
     } finally {
         button.disabled = false;
+        button.classList.remove('is-loading');
+        button.removeAttribute('aria-busy');
     }
 }
 
 function unlockApp() {
     state.unlocked = true;
-    document.body.classList.remove('locked');
-    $('#lock-section').hidden = true;
+    document.body.classList.remove('locked', 'session-loading', 'is-unlocking');
+    document.body.classList.add('is-unlocked');
+    const lockSection = $('#lock-section');
+    lockSection.hidden = false;
+    lockSection.setAttribute('aria-hidden', 'true');
     $('#private-app').hidden = false;
     $('#main-nav').hidden = false;
     $('#bottom-nav').hidden = false;
     $('#add-dream-button').hidden = false;
     $('#install-button').hidden = !state.deferredInstallPrompt;
     $('#unlock-status').textContent = '';
+    window.setTimeout(() => {
+        lockSection.hidden = true;
+        lockSection.removeAttribute('aria-hidden');
+        document.body.classList.remove('is-unlocked');
+    }, 460);
 }
 
 function showLockScreen() {
     state.unlocked = false;
     document.body.classList.add('locked');
+    document.body.classList.remove('is-unlocked', 'is-unlocking', 'session-loading');
     $('#lock-section').hidden = false;
+    $('#lock-section').removeAttribute('aria-hidden');
     $('#private-app').hidden = true;
     $('#main-nav').hidden = true;
     $('#bottom-nav').hidden = true;
@@ -210,6 +239,7 @@ function applyCollection(collection) {
     state.voteTotals = collection.voteTotals || [];
     hideDataStatus();
     renderAll();
+    setAppLoading(false);
 }
 
 function normalizeStory(story) {
@@ -222,10 +252,16 @@ function normalizeStory(story) {
 }
 
 async function loadCollection(showStatus = true) {
+    setAppLoading(true);
     if (showStatus) showDataStatus('Opening your dreambook...');
-    const collection = await apiRequest('collection');
-    applyCollection(collection);
-    return collection;
+    try {
+        const collection = await apiRequest('collection');
+        applyCollection(collection);
+        return collection;
+    } catch (error) {
+        setAppLoading(false);
+        throw error;
+    }
 }
 
 function renderAll() {
@@ -241,6 +277,7 @@ function renderHome() {
     const recentContainer = $('#recent-dream-content');
     if (!recentContainer) return;
 
+    recentContainer.classList.remove('loading-copy');
     const recent = [...state.stories].sort(compareRecent)[0];
     recentContainer.replaceChildren();
     if (!recent) {
@@ -268,6 +305,7 @@ function renderHome() {
 function renderHomeMarquee() {
     const container = $('#home-winners');
     if (!container) return;
+    container.classList.remove('loading-copy');
     container.replaceChildren();
 
     const firstPlaces = getFirstPlaceItems();
@@ -470,16 +508,22 @@ function createStoryArticle(story) {
     storyLabel.textContent = story.link;
     const actions = document.createElement('div');
     actions.className = 'story-actions';
-    if (!story.image_path) {
-        const coverButton = document.createElement('button');
-        coverButton.className = 'text-button story-cover-action';
-        coverButton.type = 'button';
-        coverButton.dataset.uploadStory = story.id;
-        coverButton.textContent = 'Add cover';
-        actions.append(coverButton);
-    }
+    const promptButton = document.createElement('button');
+    promptButton.className = 'story-tool-button prompt-tool';
+    promptButton.type = 'button';
+    promptButton.dataset.generateStory = story.id;
+    promptButton.textContent = 'Generate';
+    actions.append(promptButton);
+
+    const coverButton = document.createElement('button');
+    coverButton.className = 'story-tool-button upload-tool';
+    coverButton.type = 'button';
+    coverButton.dataset.uploadStory = story.id;
+    coverButton.textContent = story.image_path ? 'Replace photo' : 'Upload photo';
+    actions.append(coverButton);
+
     const vote = document.createElement('button');
-    vote.className = 'vote-button';
+    vote.className = 'vote-button story-tool-button';
     vote.type = 'button';
     vote.dataset.voteStory = story.id;
     vote.textContent = 'Give points';
@@ -548,7 +592,9 @@ async function handleVoteSubmit(event) {
     event.preventDefault();
     if (!state.currentStory) return;
     const status = $('#vote-status');
+    const submitButton = $('#vote-form button[type="submit"]');
     status.textContent = 'Saving your points...';
+    setButtonLoading(submitButton, true);
     try {
         await apiRequest('vote', {
             award_id: $('#vote-award').value,
@@ -560,6 +606,8 @@ async function handleVoteSubmit(event) {
         await loadCollection(false);
     } catch (error) {
         status.textContent = error.message;
+    } finally {
+        setButtonLoading(submitButton, false);
     }
 }
 
@@ -659,43 +707,41 @@ async function handleStorySubmit(event) {
     const dreamDate = $('#story-date').value;
     const selectedPage = $('#story-page-choice').value;
     const paragraphs = $$('#paragraph-list textarea').map((field) => field.value.trim()).filter(Boolean);
-    let imagePrompt = $('#story-image-prompt').value.trim();
 
     if (!title || !dreamDate || !paragraphs.length) {
         status.textContent = 'Add a title, date, and at least one paragraph.';
         return;
     }
-    if (!imagePrompt) {
-        imagePrompt = buildImagePrompt();
-        $('#story-image-prompt').value = imagePrompt;
-    }
 
     status.textContent = 'Creating the dream...';
+    const submitButton = $('#story-form button[type="submit"]');
+    setButtonLoading(submitButton, true);
     const form = new FormData();
     form.append('title', title);
     form.append('page_number', selectedPage);
     form.append('dream_date', dreamDate);
     form.append('paragraphs', JSON.stringify(paragraphs));
-    form.append('image_prompt', imagePrompt);
 
     try {
         const created = await apiRequest('save-story', form);
-        state.pendingStoryForImage = created;
-        $('#story-created-label').textContent = `${created.title} · ${created.link}`;
-        $('#story-form').hidden = true;
-        $('#story-image-step').hidden = false;
+        resetStoryModal();
+        closeModal('story-modal');
+        showToast(`Dream created as ${created.link}.`);
         status.textContent = '';
         await loadCollection(false);
-        $('#story-image-file').focus();
     } catch (error) {
         status.textContent = error.message || 'Unable to create the dream.';
+    } finally {
+        setButtonLoading(submitButton, false);
     }
 }
 
 async function handleAwardSubmit(event) {
     event.preventDefault();
     const status = $('#award-form-status');
+    const submitButton = $('#award-form button[type="submit"]');
     status.textContent = 'Saving award...';
+    setButtonLoading(submitButton, true);
     try {
         await apiRequest('save-award', {
             name: $('#award-name').value.trim(),
@@ -709,13 +755,17 @@ async function handleAwardSubmit(event) {
         await loadCollection(false);
     } catch (error) {
         status.textContent = error.message;
+    } finally {
+        setButtonLoading(submitButton, false);
     }
 }
 
 async function handleWinnerSubmit(event) {
     event.preventDefault();
     const status = $('#winner-form-status');
+    const submitButton = $('#winner-form button[type="submit"]');
     status.textContent = 'Saving winner...';
+    setButtonLoading(submitButton, true);
     try {
         await apiRequest('set-winner', {
             award_id: $('#winner-award').value,
@@ -727,6 +777,8 @@ async function handleWinnerSubmit(event) {
         await loadCollection(false);
     } catch (error) {
         status.textContent = error.message;
+    } finally {
+        setButtonLoading(submitButton, false);
     }
 }
 
@@ -750,24 +802,27 @@ function addParagraphRow(value = '') {
     list.append(row);
 }
 
+function openPromptModal(storyId) {
+    const story = getStory(storyId);
+    if (!story) return;
+    state.promptStory = story;
+    $('#prompt-story-title').textContent = `${story.title} · ${story.link}`;
+    $('#story-image-prompt').value = story.image_prompt || buildImagePrompt(story);
+    $('#image-prompt-status').textContent = '';
+    openModal('prompt-modal');
+    $('#copy-image-prompt').focus();
+}
+
 function generateImagePrompt() {
-    const prompt = buildImagePrompt();
-    $('#story-image-prompt').value = prompt;
+    if (!state.promptStory) return;
+    $('#story-image-prompt').value = buildImagePrompt(state.promptStory);
     $('#image-prompt-status').textContent = 'Prompt ready to copy.';
 }
 
-function updateImagePromptIfVisible() {
-    const prompt = $('#story-image-prompt');
-    if (!prompt || prompt.value.trim()) return;
-    if ($('#story-title').value.trim() || $$('#paragraph-list textarea').some((field) => field.value.trim())) {
-        $('#image-prompt-status').textContent = 'Generate the prompt when the dream is ready.';
-    }
-}
-
-function buildImagePrompt() {
-    const title = $('#story-title').value.trim() || 'Untitled dream';
-    const paragraphs = $$('#paragraph-list textarea')
-        .map((field) => plainText(field.value.trim()))
+function buildImagePrompt(story) {
+    const title = story?.title || 'Untitled dream';
+    const paragraphs = (story?.paragraphs || [])
+        .map((paragraph) => plainText(paragraph))
         .filter(Boolean)
         .join(' ')
         .slice(0, 3000);
@@ -780,14 +835,32 @@ async function copyImagePrompt() {
         generateImagePrompt();
         return copyImagePrompt();
     }
+    const copyButton = $('#copy-image-prompt');
+    setButtonLoading(copyButton, true);
     try {
-        await navigator.clipboard.writeText(prompt);
-    } catch {
-        const textarea = $('#story-image-prompt');
-        textarea.select();
-        document.execCommand('copy');
+        try {
+            await navigator.clipboard.writeText(prompt);
+        } catch {
+            const textarea = $('#story-image-prompt');
+            textarea.select();
+            document.execCommand('copy');
+        }
+        if (state.promptStory) {
+            try {
+                await apiRequest('save-story-prompt', {
+                    story_id: state.promptStory.id,
+                    image_prompt: prompt,
+                });
+                state.promptStory.image_prompt = prompt;
+            } catch (error) {
+                $('#image-prompt-status').textContent = `Copied, but could not save: ${error.message}`;
+                return;
+            }
+        }
+        $('#image-prompt-status').textContent = 'Copied and saved. Paste it into your image generator.';
+    } finally {
+        setButtonLoading(copyButton, false);
     }
-    $('#image-prompt-status').textContent = 'Copied. Paste it into your image generator.';
 }
 
 function handlePostImageSelection() {
@@ -808,51 +881,41 @@ function handlePostImageSelection() {
 async function handleStoryImageUpload() {
     const file = $('#story-image-file').files[0];
     const status = $('#story-image-status');
-    if (!state.pendingStoryForImage || !file) {
+    const uploadButton = $('#upload-story-image');
+    if (!state.imageStory || !file) {
         status.textContent = 'Choose an image first.';
         return;
     }
     status.textContent = 'Uploading cover...';
+    setButtonLoading(uploadButton, true);
     const form = new FormData();
-    form.append('story_id', state.pendingStoryForImage.id);
+    form.append('story_id', state.imageStory.id);
     form.append('image', file, file.name);
     try {
         await apiRequest('upload-story-image', form);
-        resetStoryModal();
-        closeModal('story-modal');
+        closeModal('image-modal');
         showToast('Cover added to the dream.');
         await loadCollection(false);
     } catch (error) {
         status.textContent = error.message || 'Unable to upload the cover.';
+    } finally {
+        setButtonLoading(uploadButton, false);
     }
-}
-
-function skipStoryImage() {
-    resetStoryModal();
-    closeModal('story-modal');
-    showToast('Dream created. Add its cover later from Stories.');
 }
 
 function openImageUpload(storyId) {
     const story = getStory(storyId);
     if (!story) return;
-    state.pendingStoryForImage = story;
-    $('#story-created-label').textContent = `${story.title} · ${story.link}`;
-    $('#story-form').hidden = true;
-    $('#story-image-step').hidden = false;
+    state.imageStory = story;
+    $('#image-story-title').textContent = `${story.title} · ${story.link}`;
     $('#story-image-status').textContent = '';
     $('#story-image-file').value = '';
     $('#story-image-preview').hidden = true;
-    openModal('story-modal');
+    openModal('image-modal');
 }
 
 function openStoryModal() {
-    if (state.pendingStoryForImage) {
-        $('#story-form').hidden = true;
-        $('#story-image-step').hidden = false;
-    } else {
-        resetStoryModal();
-    }
+    resetStoryModal();
     openModal('story-modal');
 }
 
@@ -870,19 +933,9 @@ function openWinnerModal() {
 
 function resetStoryModal() {
     $('#story-form').reset();
-    $('#story-form').hidden = false;
     $('#paragraph-list').replaceChildren();
     addParagraphRow();
-    $('#story-image-prompt').value = '';
-    $('#image-prompt-status').textContent = '';
     $('#story-form-status').textContent = '';
-    $('#story-image-step').hidden = true;
-    $('#story-image-file').value = '';
-    $('#story-image-status').textContent = '';
-    $('#story-image-preview').hidden = true;
-    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
-    state.previewUrl = '';
-    state.pendingStoryForImage = null;
     setDefaultDate();
     populatePageChoices();
 }
@@ -900,12 +953,22 @@ function closeModal(id) {
     modal.hidden = true;
     if (!$$('.modal-backdrop:not([hidden])').length) document.body.classList.remove('modal-open');
     if (id === 'vote-modal') state.currentStory = null;
+    if (id === 'prompt-modal') state.promptStory = null;
+    if (id === 'image-modal') {
+        state.imageStory = null;
+        if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+        state.previewUrl = '';
+    }
 }
 
 function closeAllModals() {
     $$('.modal-backdrop').forEach((modal) => { modal.hidden = true; });
     document.body.classList.remove('modal-open');
     state.currentStory = null;
+    state.promptStory = null;
+    state.imageStory = null;
+    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+    state.previewUrl = '';
 }
 
 function showSection(sectionId) {
@@ -1001,6 +1064,21 @@ function showDataStatus(message, isError = false) {
     status.hidden = false;
     status.classList.toggle('error', isError);
     status.textContent = message;
+}
+
+function setAppLoading(isLoading) {
+    const app = $('#private-app');
+    const loader = $('#app-loading');
+    if (app) app.classList.toggle('is-data-loading', isLoading);
+    if (loader) loader.hidden = !isLoading;
+}
+
+function setButtonLoading(button, isLoading) {
+    if (!button) return;
+    button.disabled = isLoading;
+    button.classList.toggle('is-loading', isLoading);
+    if (isLoading) button.setAttribute('aria-busy', 'true');
+    else button.removeAttribute('aria-busy');
 }
 
 function hideDataStatus() {
