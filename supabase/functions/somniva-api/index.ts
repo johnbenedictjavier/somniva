@@ -188,8 +188,27 @@ async function saveStory(request: Request) {
     const placement = await nextStoryPlacement(rawPayload.page_number);
     const story = storyPayload(rawPayload, placement);
 
-    const insert = await admin.from('SM_stories').insert({ ...story, image_path: null }).select('*').single();
-    if (insert.error) throw insert.error;
+    // Accept the previous one-step upload shape while new clients use the follow-up upload action.
+    const file = form.get('image');
+    let imagePath: string | null = null;
+    if (file instanceof File && file.size > 0) {
+        if (file.size > 12 * 1024 * 1024) throw new Error('Cover photo must be 12 MB or smaller.');
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPG, PNG, or WebP image.');
+        const extension = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+        imagePath = `img/${placement.link}-${crypto.randomUUID()}.${extension}`;
+        const upload = await admin.storage.from(imageBucket).upload(imagePath, file, {
+            cacheControl: '3600',
+            contentType: file.type,
+            upsert: false,
+        });
+        if (upload.error) throw upload.error;
+    }
+
+    const insert = await admin.from('SM_stories').insert({ ...story, image_path: imagePath }).select('*').single();
+    if (insert.error) {
+        if (imagePath) await admin.storage.from(imageBucket).remove([imagePath]);
+        throw insert.error;
+    }
     return insert.data;
 }
 
