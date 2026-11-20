@@ -122,9 +122,11 @@
                                 <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
                                 <span>Add award</span>
                             </button>
+                            <button id="award-settings-button" class="icon-button settings-button" type="button" aria-label="Open award settings" title="Award settings">
+                                <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z" /><path d="m19.3 13.4 1.4 1.1-1.8 3.1-1.7-.7a7.8 7.8 0 0 1-1.8 1l-.3 1.8h-3.6l-.3-1.8a7.8 7.8 0 0 1-1.8-1l-1.7.7-1.8-3.1 1.4-1.1a7.7 7.7 0 0 1 0-2.1L6 10.2l1.8-3.1 1.7.7a7.8 7.8 0 0 1 1.8-1l.3-1.8h3.6l.3 1.8a7.8 7.8 0 0 1 1.8 1l1.7-.7 1.8 3.1-1.4 1.1a7.7 7.7 0 0 1 0 2.1Z" /></svg>
+                                <span class="visually-hidden">Award settings</span>
+                            </button>
                         </div>
-                        <p class="award-order-help">Drag award names to arrange their order.</p>
-                        <div id="award-order-list" class="award-order-list" aria-label="Drag awards to rearrange"></div>
                     </div>
                     <div id="awards-container" class="awards-container"></div>
                 </div>
@@ -264,19 +266,33 @@
         </div>
     </div>
 
+    <div id="award-settings-modal" class="modal-backdrop" hidden>
+        <div class="modal-card modal-card-wide glass-panel" role="dialog" aria-modal="true" aria-labelledby="award-settings-heading">
+            <button id="award-settings-close" class="icon-button modal-close" type="button" aria-label="Close award settings">&times;</button>
+            <div class="modal-heading">
+                <div class="eyebrow">Hall of Fame</div>
+                <h2 id="award-settings-heading">Award settings</h2>
+                <p class="modal-intro">Drag names to change their order, or update and remove an award.</p>
+            </div>
+            <div id="award-order-list" class="award-order-list settings-award-list" role="list" aria-label="Drag awards to rearrange"></div>
+            <p id="award-settings-empty" class="empty-state" hidden>No awards have been created yet.</p>
+            <p id="award-settings-status" class="form-status" role="status"></p>
+        </div>
+    </div>
+
     <div id="award-modal" class="modal-backdrop" hidden>
         <div class="modal-card glass-panel" role="dialog" aria-modal="true" aria-labelledby="award-heading">
             <button id="award-modal-close" class="icon-button modal-close" type="button" aria-label="Close add award dialog">&times;</button>
             <div class="modal-heading">
-                <div class="eyebrow">Hall of Fame</div>
+                <div id="award-modal-kicker" class="eyebrow">Hall of Fame</div>
                 <h2 id="award-heading">Add an award</h2>
-                <p class="modal-intro">Create a new distinction for the dreams that stay with you.</p>
+                <p id="award-modal-intro" class="modal-intro">Create a new distinction for the dreams that stay with you.</p>
             </div>
             <form id="award-form" class="compact-form">
                 <label>Award name *<input id="award-name" type="text" required maxlength="100"></label>
                 <label>Description<textarea id="award-description" rows="4"></textarea></label>
                 <div class="form-actions modal-form-actions">
-                    <button class="primary-button" type="submit">Add award</button>
+                    <button class="primary-button" type="submit"><span id="award-submit-label">Add award</span></button>
                     <span id="award-form-status" class="form-status" role="status"></span>
                 </div>
             </form>
@@ -292,7 +308,7 @@
                 <p id="winner-slot-label" class="modal-intro"></p>
             </div>
             <div id="winner-preview" class="winner-modal-preview">
-                <img id="winner-modal-image" class="winner-modal-image" src="somniva_logo.png" alt="">
+                <img id="winner-modal-image" class="winner-modal-image image-fallback" src="somniva_default_dream.svg" alt="Dream artwork placeholder">
                 <div class="winner-modal-copy">
                     <strong id="winner-modal-title">No dream selected</strong>
                     <span id="winner-modal-link"></span>
@@ -307,7 +323,7 @@
                 <div id="winner-carousel" class="winner-carousel">
                     <button id="winner-prev" class="carousel-button" type="button" aria-label="Previous dream">‹</button>
                     <div class="winner-carousel-card">
-                        <img id="winner-carousel-image" class="winner-carousel-image" src="somniva_logo.png" alt="">
+                        <img id="winner-carousel-image" class="winner-carousel-image image-fallback" src="somniva_default_dream.svg" alt="Dream artwork placeholder">
                         <strong id="winner-carousel-title">No dreams available</strong>
                         <span id="winner-carousel-link"></span>
                         <small id="winner-carousel-status"></small>

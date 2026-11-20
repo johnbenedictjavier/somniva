@@ -1,4 +1,4 @@
-const CACHE_NAME = 'somniva-shell-v4';
+const CACHE_NAME = 'somniva-shell-v5';
 const APP_SHELL = [
     './',
     './index.html',
@@ -8,6 +8,7 @@ const APP_SHELL = [
     './config.js',
     './manifest.webmanifest',
     './somniva_logo.png',
+    './somniva_default_dream.svg',
 ];
 
 self.addEventListener('install', (event) => {

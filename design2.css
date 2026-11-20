@@ -491,6 +491,15 @@ label {
     margin: 0 auto;
 }
 
+#private-app:not([hidden]) #home-section.active {
+    display: block;
+}
+
+#private-app:not([hidden]) #home-section.active,
+#private-app:not([hidden]) #home-section.active .hero-card {
+    visibility: visible;
+}
+
 .home-shell {
     display: grid;
     gap: 20px;
@@ -501,6 +510,7 @@ label {
 .hero-card {
     position: relative;
     display: grid;
+    width: 100%;
     justify-items: center;
     gap: 12px;
     min-height: 0;
@@ -528,6 +538,7 @@ label {
 
 .hero-card > * {
     position: relative;
+    min-width: 0;
     z-index: 1;
 }
 
@@ -682,6 +693,22 @@ label {
     line-height: 1;
 }
 
+.settings-button {
+    width: 42px;
+    height: 42px;
+    color: var(--gold-bright);
+}
+
+.settings-icon {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+}
+
 .home-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -699,6 +726,7 @@ label {
 }
 
 .hero-marquee {
+    min-width: 0;
     width: min(100%, 780px);
     margin-top: 18px;
     padding: 16px 16px 9px;
@@ -930,7 +958,60 @@ label {
 }
 
 .award-order-name {
+    min-width: 0;
+    flex: 1 1 auto;
     overflow-wrap: anywhere;
+}
+
+.settings-award-list {
+    display: grid;
+    justify-content: stretch;
+    gap: 9px;
+}
+
+.settings-award-list .award-order-item {
+    width: 100%;
+    justify-content: flex-start;
+    border-radius: 15px;
+}
+
+.award-order-actions {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 5px;
+    margin-left: auto;
+}
+
+.award-order-action {
+    display: inline-grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid rgba(198, 201, 255, 0.28);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--lavender);
+    cursor: pointer;
+}
+
+.award-order-action:hover {
+    border-color: var(--gold);
+    background: rgba(230, 194, 111, 0.14);
+}
+
+.award-order-action svg {
+    width: 13px;
+    height: 13px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+}
+
+.award-order-action.award-delete-action {
+    color: var(--danger);
 }
 
 .category-group {
@@ -2140,7 +2221,10 @@ label select:focus {
     }
 
     .hero-card {
+        height: auto;
         min-height: 0;
+        align-content: start;
+        overflow: visible;
         padding-right: 19px;
         padding-left: 19px;
     }
@@ -2160,6 +2244,10 @@ label select:focus {
 
     .hero-actions button {
         width: min(100%, 270px);
+    }
+
+    .hero-marquee {
+        width: 100%;
     }
 
     .feature-card-wide {

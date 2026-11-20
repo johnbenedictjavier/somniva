@@ -15,6 +15,7 @@ const state = {
     commentStory: null,
     editingComment: null,
     editingStory: null,
+    editingAward: null,
     winnerSlot: null,
     winnerCandidateIndex: 0,
     winnerTouchStartX: 0,
@@ -45,6 +46,7 @@ const fixedImageStyle = [
     'If any person appears, their face must be softly blurred, indistinct, anonymous, and completely unrecognizable; do not create readable facial identity.',
     'Do not include words, letters, captions, logos, watermarks, borders, UI, or readable signs.',
 ].join(' ');
+const defaultDreamImage = 'somniva_default_dream.svg';
 const iconMarkup = {
     generate: '<path d="m13 2 1.5 5.5L20 9l-5.5 1.5L13 16l-1.5-5.5L6 9l5.5-1.5L13 2Z" /><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15ZM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14Z" />',
     upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14" />',
@@ -93,11 +95,13 @@ function bindEvents() {
     $('#toggle-password')?.addEventListener('click', togglePasswordVisibility);
     $('#add-dream-button')?.addEventListener('click', openStoryModal);
     $('#add-award-button')?.addEventListener('click', openAwardModal);
+    $('#award-settings-button')?.addEventListener('click', openAwardSettingsModal);
     $('#story-modal-close')?.addEventListener('click', () => closeModal('story-modal'));
     $('#comment-modal-close')?.addEventListener('click', () => closeModal('comment-modal'));
     $('#prompt-modal-close')?.addEventListener('click', () => closeModal('prompt-modal'));
     $('#image-modal-close')?.addEventListener('click', () => closeModal('image-modal'));
     $('#award-modal-close')?.addEventListener('click', () => closeModal('award-modal'));
+    $('#award-settings-close')?.addEventListener('click', () => closeModal('award-settings-modal'));
     $('#winner-modal-close')?.addEventListener('click', () => closeModal('winner-modal'));
     $('#vote-close')?.addEventListener('click', () => closeModal('vote-modal'));
     $('#winner-edit-button')?.addEventListener('click', openWinnerEditor);
@@ -174,6 +178,20 @@ function bindEvents() {
         if (deleteCommentButton) {
             event.stopPropagation();
             deleteComment(deleteCommentButton.dataset.storyId, Number(deleteCommentButton.dataset.commentIndex));
+            return;
+        }
+
+        const editAwardButton = event.target.closest('[data-edit-award]');
+        if (editAwardButton) {
+            event.stopPropagation();
+            openEditAward(editAwardButton.dataset.editAward);
+            return;
+        }
+
+        const deleteAwardButton = event.target.closest('[data-delete-award]');
+        if (deleteAwardButton) {
+            event.stopPropagation();
+            deleteAward(deleteAwardButton.dataset.deleteAward);
             return;
         }
 
@@ -321,6 +339,7 @@ function togglePasswordVisibility() {
 }
 
 function unlockApp() {
+    const firstUnlock = !state.unlocked;
     state.unlocked = true;
     window.clearTimeout(state.unlockTimer);
     document.body.classList.remove('locked', 'session-loading', 'is-unlocking');
@@ -333,6 +352,7 @@ function unlockApp() {
     $('#bottom-nav').hidden = false;
     $('#add-dream-button').hidden = false;
     $('#install-button').hidden = !state.deferredInstallPrompt;
+    if (firstUnlock) activateHomeSection();
     $('#unlock-status').textContent = '';
     setUnlockLoading(false);
     state.unlockTimer = window.setTimeout(() => {
@@ -527,14 +547,39 @@ function renderAwardOrder() {
     if (!list) return;
     list.replaceChildren();
     list.hidden = !state.awards.length;
+    const empty = $('#award-settings-empty');
+    if (empty) empty.hidden = Boolean(state.awards.length);
     orderedAwards().forEach((award) => {
         const item = document.createElement('div');
         item.className = 'award-order-item';
         item.draggable = true;
         item.dataset.awardId = award.id;
         item.setAttribute('role', 'listitem');
-        item.innerHTML = `<span class="award-drag-handle" aria-hidden="true">⋮⋮</span><span class="award-order-name"></span>`;
-        item.querySelector('.award-order-name').textContent = award.name;
+        const handle = document.createElement('span');
+        handle.className = 'award-drag-handle';
+        handle.setAttribute('aria-hidden', 'true');
+        handle.textContent = '⋮⋮';
+        const name = document.createElement('span');
+        name.className = 'award-order-name';
+        name.textContent = award.name;
+        const actions = document.createElement('span');
+        actions.className = 'award-order-actions';
+        const edit = document.createElement('button');
+        edit.className = 'award-order-action';
+        edit.type = 'button';
+        edit.dataset.editAward = award.id;
+        edit.setAttribute('aria-label', `Edit ${award.name}`);
+        edit.title = 'Edit award';
+        edit.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${iconMarkup.edit}</svg><span class="visually-hidden">Edit</span>`;
+        const remove = document.createElement('button');
+        remove.className = 'award-order-action award-delete-action';
+        remove.type = 'button';
+        remove.dataset.deleteAward = award.id;
+        remove.setAttribute('aria-label', `Delete ${award.name}`);
+        remove.title = 'Delete award';
+        remove.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${iconMarkup.delete}</svg><span class="visually-hidden">Delete</span>`;
+        actions.append(edit, remove);
+        item.append(handle, name, actions);
         list.append(item);
     });
 }
@@ -657,9 +702,8 @@ function createWinnerCard(story, rank, awardId) {
         const empty = document.createElement('span');
         empty.className = 'winner-placeholder';
         const image = document.createElement('img');
-        image.className = 'winner-placeholder-image';
-        image.src = 'somniva_logo.png';
-        image.alt = '';
+        image.className = 'winner-placeholder-image image-fallback';
+        setDreamImage(image, '', 'Dream artwork placeholder');
         const label = document.createElement('span');
         label.textContent = 'Choose a dream';
         empty.append(image, label);
@@ -704,9 +748,7 @@ function renderWinnerPreview() {
     const winner = getWinnerForSlot(awardId, rank);
     const story = winner ? getStory(winner.story_id) : null;
     const image = $('#winner-modal-image');
-    image.src = story?.image_url || 'somniva_logo.png';
-    image.alt = story?.title || 'No dream selected';
-    image.classList.toggle('image-fallback', !story?.image_url);
+    setDreamImage(image, story?.image_url, story?.title || 'Dream artwork placeholder');
     $('#winner-modal-title').textContent = story?.title || 'No dream selected';
     $('#winner-modal-link').textContent = story ? `${story.link} · ${formatDate(story.dream_date)}` : 'This place is ready for a dream.';
     $('#winner-clear-button').disabled = !story;
@@ -750,8 +792,7 @@ function renderWinnerCandidate() {
     const status = $('#winner-carousel-status');
     const saveButton = $('#winner-save-button');
     if (!candidates.length) {
-        image.src = 'somniva_logo.png';
-        image.alt = 'No dreams available';
+        setDreamImage(image, '', 'Dream artwork placeholder');
         title.textContent = 'No dreams available';
         link.textContent = '';
         status.textContent = 'Create a dream before assigning this place.';
@@ -763,9 +804,7 @@ function renderWinnerCandidate() {
     const story = candidates[state.winnerCandidateIndex];
     const assignment = getWinnerAssignment(state.winnerSlot.awardId, story.id);
     const available = winnerCandidateIsAvailable(story);
-    image.src = story.image_url || 'somniva_logo.png';
-    image.alt = story.title;
-    image.classList.toggle('image-fallback', !story.image_url);
+    setDreamImage(image, story.image_url, story.title);
     title.textContent = story.title;
     link.textContent = `${story.link} · ${formatDate(story.dream_date)}`;
     status.textContent = available
@@ -1002,11 +1041,24 @@ function createStoryToolButton(icon, label, dataKey, storyId, extraClass = '') {
 function createStoryImage(story, className) {
     const image = document.createElement('img');
     image.className = className;
-    image.alt = story.title;
     image.loading = 'lazy';
-    image.src = story.image_url || 'somniva_logo.png';
-    if (!story.image_url) image.classList.add('image-fallback');
+    setDreamImage(image, story.image_url, story.title);
     return image;
+}
+
+function setDreamImage(image, source, alt) {
+    if (!image) return;
+    const hasUploadedImage = Boolean(source);
+    image.dataset.fallbackApplied = 'false';
+    image.alt = alt;
+    image.classList.toggle('image-fallback', !hasUploadedImage);
+    image.onerror = () => {
+        if (image.dataset.fallbackApplied === 'true') return;
+        image.dataset.fallbackApplied = 'true';
+        image.classList.add('image-fallback');
+        image.src = defaultDreamImage;
+    };
+    image.src = source || defaultDreamImage;
 }
 
 function openVoteModal(storyId) {
@@ -1158,16 +1210,18 @@ async function handleAwardSubmit(event) {
     event.preventDefault();
     const status = $('#award-form-status');
     const submitButton = $('#award-form button[type="submit"]');
-    status.textContent = 'Saving award...';
+    const editing = state.editingAward;
+    status.textContent = editing ? 'Saving award changes...' : 'Saving award...';
     setButtonLoading(submitButton, true);
     try {
-        await apiRequest('save-award', {
+        await apiRequest(editing ? 'update-award' : 'save-award', {
+            ...(editing ? { award_id: editing.id } : {}),
             name: $('#award-name').value.trim(),
             description: $('#award-description').value.trim(),
         });
         $('#award-form').reset();
         closeModal('award-modal');
-        showToast('Award added.');
+        showToast(editing ? 'Award updated.' : 'Award added.');
         await loadCollection(false);
     } catch (error) {
         status.textContent = error.message;
@@ -1216,6 +1270,22 @@ async function deleteStory(storyId) {
         await loadCollection(false);
     } catch (error) {
         showToast(error.message || 'Unable to delete the dream.');
+    }
+}
+
+async function deleteAward(awardId) {
+    const award = state.awards.find((item) => item.id === awardId);
+    if (!award || !window.confirm(`Permanently delete "${award.name}"? Its winners and votes will also be deleted.`)) return;
+    const status = $('#award-settings-status');
+    if (status) status.textContent = `Deleting ${award.name}...`;
+    try {
+        await apiRequest('delete-award', { award_id: award.id });
+        showToast('Award, winners, and votes deleted.');
+        await loadCollection(false);
+        if (status) status.textContent = '';
+    } catch (error) {
+        if (status) status.textContent = error.message || 'Unable to delete the award.';
+        else showToast(error.message || 'Unable to delete the award.');
     }
 }
 
@@ -1439,9 +1509,35 @@ function commentDateInputValue(value) {
     return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10);
 }
 
+function openAwardSettingsModal() {
+    $('#award-settings-status').textContent = '';
+    renderAwardOrder();
+    openModal('award-settings-modal');
+}
+
 function openAwardModal() {
+    state.editingAward = null;
     $('#award-form').reset();
     $('#award-form-status').textContent = '';
+    $('#award-modal-kicker').textContent = 'Hall of Fame';
+    $('#award-heading').textContent = 'Add an award';
+    $('#award-modal-intro').textContent = 'Create a new distinction for the dreams that stay with you.';
+    $('#award-submit-label').textContent = 'Add award';
+    openModal('award-modal');
+    $('#award-name').focus();
+}
+
+function openEditAward(awardId) {
+    const award = state.awards.find((item) => item.id === awardId);
+    if (!award) return;
+    state.editingAward = award;
+    $('#award-name').value = award.name;
+    $('#award-description').value = award.description || '';
+    $('#award-form-status').textContent = '';
+    $('#award-modal-kicker').textContent = 'Award settings';
+    $('#award-heading').textContent = 'Edit award';
+    $('#award-modal-intro').textContent = 'Update the award name or description.';
+    $('#award-submit-label').textContent = 'Save changes';
     openModal('award-modal');
     $('#award-name').focus();
 }
@@ -1487,6 +1583,7 @@ function closeModal(id) {
         state.commentStory = null;
         state.editingComment = null;
     }
+    if (id === 'award-modal') state.editingAward = null;
     if (id === 'prompt-modal') state.promptStory = null;
     if (id === 'winner-modal') state.winnerSlot = null;
     if (id === 'image-modal') {
@@ -1504,6 +1601,7 @@ function closeAllModals() {
     state.currentStory = null;
     state.commentStory = null;
     state.editingComment = null;
+    state.editingAward = null;
     state.promptStory = null;
     state.imageStory = null;
     state.editingStory = null;
@@ -1521,6 +1619,16 @@ function showSection(sectionId) {
         else item.removeAttribute('aria-current');
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function activateHomeSection() {
+    $$('.app-section').forEach((section) => section.classList.toggle('active', section.id === 'home-section'));
+    $$('.nav-item').forEach((item) => {
+        const isHome = item.dataset.section === 'home-section';
+        item.classList.toggle('active', isHome);
+        if (isHome) item.setAttribute('aria-current', 'page');
+        else item.removeAttribute('aria-current');
+    });
 }
 
 function goToStory(link, paragraphIndex = null) {

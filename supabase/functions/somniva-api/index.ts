@@ -398,6 +398,30 @@ async function reorderAwards(body: Record<string, unknown>) {
     return { ordered: true, award_ids: awardIds };
 }
 
+async function updateAward(body: Record<string, unknown>) {
+    const awardId = requiredText(body.award_id, 'Award', 80);
+    const name = requiredText(body.name, 'Award name', 100);
+    const description = typeof body.description === 'string' ? body.description.trim().slice(0, 1000) : '';
+    const result = await admin.from('SM_awards')
+        .update({ name, description, updated_at: new Date().toISOString() })
+        .eq('id', awardId)
+        .select('*')
+        .single();
+    if (result.error) throw result.error;
+    return result.data;
+}
+
+async function deleteAward(body: Record<string, unknown>) {
+    const awardId = requiredText(body.award_id, 'Award', 80);
+    const existing = await admin.from('SM_awards').select('id, name').eq('id', awardId).single();
+    if (existing.error) throw existing.error;
+
+    // SM_award_winners and SM_votes reference awards with ON DELETE CASCADE.
+    const result = await admin.from('SM_awards').delete().eq('id', awardId);
+    if (result.error) throw result.error;
+    return { deleted: true, award_id: awardId, name: existing.data.name };
+}
+
 async function handleAction(action: string, request: Request, body: Record<string, unknown>) {
     // Keep the previous action name valid while installed PWAs receive the new shell.
     if (action === 'collection' || action === 'archive') return collectionPayload();
@@ -412,6 +436,8 @@ async function handleAction(action: string, request: Request, body: Record<strin
     if (action === 'set-winner') return setWinner(body);
     if (action === 'remove-winner') return removeWinner(body);
     if (action === 'reorder-awards') return reorderAwards(body);
+    if (action === 'update-award') return updateAward(body);
+    if (action === 'delete-award') return deleteAward(body);
 
     if (action === 'save-award') {
         const name = requiredText(body.name, 'Award name', 100);
