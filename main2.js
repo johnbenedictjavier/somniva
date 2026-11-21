@@ -9,19 +9,16 @@ const state = {
     awards: [],
     nominees: [],
     winners: [],
-    voteTotals: [],
     currentPage: 1,
     itemsPerPage: 8,
     storyPageIndex: 0,
     storyPageNumber: 1,
     storyPages: [],
-    currentStory: null,
     commentStory: null,
     editingComment: null,
     editingStory: null,
     editingAward: null,
     winnerSlot: null,
-    voteAwardId: null,
     nomineeAwardId: null,
     nomineeSelection: new Set(),
     nomineeTouchStartX: 0,
@@ -61,11 +58,14 @@ const defaultDreamImage = 'somniva_default_dream.svg';
 const iconMarkup = {
     generate: '<path d="m13 2 1.5 5.5L20 9l-5.5 1.5L13 16l-1.5-5.5L6 9l5.5-1.5L13 2Z" /><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15ZM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14Z" />',
     upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14" />',
-    points: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z" />',
     comment: '<path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4.5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" /><path d="M7 10h10M7 13h6" />',
     edit: '<path d="m4 16.5-.8 3.3 3.3-.8L18.8 6.7a2.1 2.1 0 0 0-3-3L4 16.5Z" /><path d="m14.5 5.5 4 4" />',
     delete: '<path d="M5 7h14M10 11v5M14 11v5M9 7V4h6v3M7 7l.8 13h8.4L17 7" />',
     nominees: '<path d="M4 6h16M4 12h16M4 18h10" /><path d="m17 16 2 2 3-4" />',
+    top1: '<path d="m4 8 3 3 5-6 5 6 3-3-1.5 11h-13L4 8Z" /><path d="M5 19h14" />',
+    top2: '<circle cx="12" cy="8" r="4" /><path d="m8.8 11-1.6 9 4.8-2.5 4.8 2.5-1.6-9" />',
+    top3: '<circle cx="12" cy="8" r="4" /><path d="m8.8 11-1.6 9 4.8-2.5 4.8 2.5-1.6-9" />',
+    nominee: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z" />',
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -113,7 +113,6 @@ function bindEvents() {
     $('#award-modal-close')?.addEventListener('click', () => closeModal('award-modal'));
     $('#award-settings-close')?.addEventListener('click', () => closeModal('award-settings-modal'));
     $('#winner-modal-close')?.addEventListener('click', () => closeModal('winner-modal'));
-    $('#vote-close')?.addEventListener('click', () => closeModal('vote-modal'));
     $('#winner-clear-button')?.addEventListener('click', clearWinnerSlot);
     $('#winner-open-story')?.addEventListener('click', openWinnerStory);
     $('#nominee-modal-close')?.addEventListener('click', () => closeModal('nominee-modal'));
@@ -260,20 +259,6 @@ function bindEvents() {
             return;
         }
 
-        const voteButton = event.target.closest('[data-vote-story]');
-        if (voteButton) {
-            event.stopPropagation();
-            openVoteModal(voteButton.dataset.voteStory);
-            return;
-        }
-
-        const voteAward = event.target.closest('[data-vote-award]');
-        if (voteAward) {
-            event.stopPropagation();
-            selectVoteAward(voteAward.dataset.voteAward);
-            return;
-        }
-
         const searchResult = event.target.closest('[data-search-story]');
         if (searchResult) {
             event.stopPropagation();
@@ -300,7 +285,6 @@ function bindEvents() {
     $('#story-image-file')?.addEventListener('change', handlePostImageSelection);
     $('#upload-story-image')?.addEventListener('click', handleStoryImageUpload);
     $('#award-form')?.addEventListener('submit', handleAwardSubmit);
-    $('#vote-form')?.addEventListener('submit', handleVoteSubmit);
     $('#install-button')?.addEventListener('click', installPwa);
     updateSearchClearState();
 }
@@ -456,7 +440,6 @@ function applyCollection(collection) {
     state.awards = collection.awards || [];
     state.nominees = collection.nominees || [];
     state.winners = collection.winners || [];
-    state.voteTotals = collection.voteTotals || [];
     hideDataStatus();
     renderAll();
     setAppLoading(false);
@@ -547,6 +530,7 @@ function renderHomeMarquee() {
             card.tabIndex = -1;
         }
         const image = createStoryImage(story, 'marquee-image');
+        appendStoryStatusBadges(card, story);
         const label = document.createElement('span');
         label.className = 'marquee-label';
         label.textContent = award.name;
@@ -635,6 +619,64 @@ function isStoryNominated(awardId, storyId) {
     return getNomineesForAward(awardId).some((nominee) => nominee.story_id === storyId);
 }
 
+function getStoryAwardStatuses(storyId) {
+    return orderedAwards().flatMap((award) => {
+        const winner = state.winners.find((item) => item.award_id === award.id && item.story_id === storyId);
+        if (winner) return [{ award, kind: 'winner', rank: Number(winner.rank) }];
+        if (isStoryNominated(award.id, storyId)) return [{ award, kind: 'nominee', rank: null }];
+        return [];
+    });
+}
+
+function getAwardStatusLabel(status) {
+    return status.kind === 'winner' ? rankLabel(status.rank) : 'Nominee';
+}
+
+function createAwardStatusBadge(status, className, includeAwardName = false) {
+    const label = getAwardStatusLabel(status);
+    const badge = document.createElement('span');
+    const statusClass = status.kind === 'winner' ? `is-top-${status.rank}` : 'is-nominee';
+    const accessibleLabel = `${status.award.name} · ${label}`;
+    badge.className = `${className} ${statusClass}`;
+    badge.title = accessibleLabel;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', accessibleLabel);
+
+    const icon = document.createElement('span');
+    icon.className = 'award-status-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = iconMarkup[status.kind === 'winner' ? `top${status.rank}` : 'nominee'] || iconMarkup.nominee;
+    const text = document.createElement('span');
+    text.textContent = includeAwardName ? accessibleLabel : label;
+    badge.append(icon, text);
+    return badge;
+}
+
+function appendStoryStatusBadges(container, story) {
+    if (!container || !story) return;
+    const statuses = getStoryAwardStatuses(story.id);
+    if (!statuses.length) return;
+    const stack = document.createElement('span');
+    stack.className = 'story-status-badges';
+    statuses.forEach((status) => stack.append(createAwardStatusBadge(status, 'story-status-badge')));
+    container.append(stack);
+}
+
+function createStoryAwardSummary(story) {
+    const statuses = getStoryAwardStatuses(story.id);
+    if (!statuses.length) return null;
+    const summary = document.createElement('div');
+    summary.className = 'story-award-statuses';
+    const heading = document.createElement('span');
+    heading.className = 'story-award-statuses-heading';
+    heading.textContent = 'Award status';
+    const list = document.createElement('div');
+    list.className = 'story-award-status-list';
+    statuses.forEach((status) => list.append(createAwardStatusBadge(status, 'story-award-status', true)));
+    summary.append(heading, list);
+    return summary;
+}
+
 function createNomineeRail(award) {
     const viewport = document.createElement('div');
     viewport.className = 'nominee-marquee-viewport marquee-viewport';
@@ -661,6 +703,7 @@ function createNomineeRail(award) {
         title.className = 'nominee-card-title';
         title.textContent = story.title;
         card.append(image, title);
+        appendStoryStatusBadges(card, story);
         track.append(card);
     });
     viewport.append(track);
@@ -849,8 +892,10 @@ function createWinnerCard(story, rank, awardId) {
     badge.textContent = ['I', 'II', 'III'][rank - 1];
     frame.append(badge);
 
-    if (story) frame.append(createStoryImage(story, 'winner-image'));
-    else {
+    if (story) {
+        frame.append(createStoryImage(story, 'winner-image'));
+        appendStoryStatusBadges(frame, story);
+    } else {
         const empty = document.createElement('span');
         empty.className = 'winner-placeholder';
         const image = document.createElement('img');
@@ -867,15 +912,6 @@ function createWinnerCard(story, rank, awardId) {
     const title = document.createElement('strong');
     title.textContent = story?.title || 'Choose a dream';
     info.append(title);
-
-    if (story) {
-        const score = state.voteTotals.find((item) => item.story_id === story.id && item.award_id === awardId);
-        if (score) {
-            const scoreLine = document.createElement('small');
-            scoreLine.textContent = `${score.total_points} points · ${score.vote_count} vote${Number(score.vote_count) === 1 ? '' : 's'}`;
-            info.append(scoreLine);
-        }
-    }
 
     card.append(frame, info);
     return card;
@@ -950,6 +986,7 @@ function renderNomineeGrid() {
         title.className = 'nominee-option-title';
         title.textContent = story.title;
         option.append(image, title);
+        appendStoryStatusBadges(option, story);
         grid.append(option);
     });
 }
@@ -970,9 +1007,8 @@ function getNomineeRemovalImpact(awardId, selectedStoryIds) {
         .map((nominee) => ({
             story: getStory(nominee.story_id),
             hasWinner: state.winners.some((winner) => winner.award_id === awardId && winner.story_id === nominee.story_id),
-            hasVote: state.voteTotals.some((vote) => vote.award_id === awardId && vote.story_id === nominee.story_id),
         }))
-        .filter((item) => item.hasWinner || item.hasVote);
+        .filter((item) => item.hasWinner);
 }
 
 async function persistNominees(awardId, storyIds) {
@@ -1005,7 +1041,7 @@ async function saveNominees() {
         const extra = impact.length > 3 ? ` and ${impact.length - 3} more` : '';
         openConfirmation({
             title: 'Clear nominee data?',
-            message: `${names}${extra} will lose its points and podium place when removed from this award.`,
+            message: `${names}${extra} will lose its podium place when removed from this award.`,
             confirmLabel: 'Remove and clear',
             danger: true,
             onConfirm: () => persistNominees(awardId, storyIds),
@@ -1252,7 +1288,6 @@ function createStoryArticle(story) {
     actions.append(
         createStoryToolButton('generate', 'Generate image prompt', 'generateStory', story.id, 'prompt-tool'),
         createStoryToolButton('upload', story.image_path ? 'Replace photo' : 'Upload photo', 'uploadStory', story.id, 'upload-tool'),
-        createStoryToolButton('points', 'Give points', 'voteStory', story.id, 'vote-tool'),
         createStoryToolButton('comment', 'Add comment', 'commentStory', story.id, 'comment-tool'),
         createStoryToolButton('edit', 'Edit story', 'editStory', story.id, 'edit-tool'),
         createStoryToolButton('delete', 'Delete story', 'deleteStory', story.id, 'delete-tool'),
@@ -1262,16 +1297,20 @@ function createStoryArticle(story) {
     const picture = document.createElement('div');
     picture.className = `pic${story.image_path ? '' : ' has-no-image'}`;
     picture.append(createStoryImage(story, 'story-image'));
+    appendStoryStatusBadges(picture, story);
     const title = document.createElement('h1');
     title.textContent = story.title;
     const date = document.createElement('h3');
     date.textContent = formatDate(story.dream_date);
+    const awardSummary = createStoryAwardSummary(story);
     const content = document.createElement('div');
     content.className = 'story-content';
     content.id = `${story.link}-content`;
     content.innerHTML = sanitizeHtml(getStoryContent(story));
 
-    article.append(topLine, picture, title, date, content);
+    article.append(topLine, picture, title, date);
+    if (awardSummary) article.append(awardSummary);
+    article.append(content);
     story.comments.forEach((comment, index) => {
         const commentCard = document.createElement('div');
         commentCard.className = 'comment';
@@ -1346,87 +1385,6 @@ function setDreamImage(image, source, alt) {
         image.src = defaultDreamImage;
     };
     image.src = source || defaultDreamImage;
-}
-
-function openVoteModal(storyId) {
-    const story = getStory(storyId);
-    const nominatedAwards = story
-        ? orderedAwards().filter((award) => award.active !== false && isStoryNominated(award.id, story.id))
-        : [];
-    if (!story || !nominatedAwards.length) {
-        showToast(story ? 'This dream is not nominated for an active award.' : 'Create an award before voting.');
-        return;
-    }
-    state.currentStory = story;
-    $('#vote-story-title').textContent = story.title;
-    populateVoteAwards(story.id);
-    $('#vote-points').value = '10';
-    $('#vote-status').textContent = '';
-    openModal('vote-modal');
-    $('#vote-awards .is-selected')?.focus();
-}
-
-async function handleVoteSubmit(event) {
-    event.preventDefault();
-    if (!state.currentStory) return;
-    const status = $('#vote-status');
-    if (!state.voteAwardId) {
-        status.textContent = 'Choose an award first.';
-        return;
-    }
-    const submitButton = $('#vote-form button[type="submit"]');
-    status.textContent = '';
-    setButtonLoading(submitButton, true);
-    try {
-        await apiRequest('vote', {
-            award_id: state.voteAwardId,
-            story_id: state.currentStory.id,
-            points: Number($('#vote-points').value),
-        });
-        closeModal('vote-modal');
-        showToast('Your points are saved.');
-        await loadCollection(false);
-    } catch (error) {
-        status.textContent = error.message;
-    } finally {
-        setButtonLoading(submitButton, false);
-    }
-}
-
-function populateVoteAwards(storyId = state.currentStory?.id) {
-    const list = $('#vote-awards');
-    if (!list) return;
-    list.replaceChildren();
-    const awards = orderedAwards()
-        .filter((award) => award.active !== false && isStoryNominated(award.id, storyId));
-    state.voteAwardId = awards[0]?.id || null;
-    awards.forEach((award) => {
-        const option = document.createElement('button');
-        option.className = 'vote-award-option';
-        option.type = 'button';
-        option.dataset.voteAward = award.id;
-        option.setAttribute('role', 'radio');
-        option.setAttribute('aria-checked', String(award.id === state.voteAwardId));
-        if (award.id === state.voteAwardId) option.classList.add('is-selected');
-
-        const name = document.createElement('strong');
-        name.textContent = award.name;
-        const description = document.createElement('span');
-        description.textContent = award.description || 'A distinction chosen for a memorable dream.';
-        option.append(name, description);
-        list.append(option);
-    });
-}
-
-function selectVoteAward(awardId) {
-    const options = $$('#vote-awards [data-vote-award]');
-    if (!options.some((option) => option.dataset.voteAward === awardId)) return;
-    state.voteAwardId = awardId;
-    options.forEach((option) => {
-        const selected = option.dataset.voteAward === awardId;
-        option.classList.toggle('is-selected', selected);
-        option.setAttribute('aria-checked', String(selected));
-    });
 }
 
 async function handleStorySubmit(event) {
@@ -1555,12 +1513,12 @@ function deleteAward(awardId) {
     if (!award) return;
     openConfirmation({
         title: 'Delete this award?',
-        message: `"${award.name}" and its nominees, winners, and scores will be permanently removed.`,
+        message: `"${award.name}" and its nominees and winners will be permanently removed.`,
         confirmLabel: 'Delete award',
         danger: true,
         onConfirm: async () => {
             await apiRequest('delete-award', { award_id: award.id });
-            showToast('Award, winners, and votes deleted.');
+            showToast('Award, nominees, and winners deleted.');
             await loadCollection(false);
         },
     });
@@ -1858,10 +1816,6 @@ function closeModal(id) {
         document.body.style.top = '';
         window.scrollTo(0, state.modalScrollY);
     }
-    if (id === 'vote-modal') {
-        state.currentStory = null;
-        state.voteAwardId = null;
-    }
     if (id === 'comment-modal') {
         state.commentStory = null;
         state.editingComment = null;
@@ -1889,8 +1843,6 @@ function closeAllModals() {
     document.body.classList.remove('modal-open');
     document.body.style.top = '';
     window.scrollTo(0, state.modalScrollY);
-    state.currentStory = null;
-    state.voteAwardId = null;
     state.commentStory = null;
     state.editingComment = null;
     state.editingAward = null;

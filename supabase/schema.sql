@@ -49,19 +49,6 @@ create table if not exists public."SM_award_winners" (
         on delete cascade
 );
 
-create table if not exists public."SM_votes" (
-    id uuid primary key default gen_random_uuid(),
-    award_id uuid not null references public."SM_awards"(id) on delete cascade,
-    story_id uuid not null references public."SM_stories"(id) on delete cascade,
-    points smallint not null check (points between 1 and 10),
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-    unique (award_id, story_id),
-    foreign key (award_id, story_id)
-        references public."SM_award_nominees"(award_id, story_id)
-        on delete cascade
-);
-
 create table if not exists public."SM_admins" (
     user_id uuid primary key references auth.users(id) on delete cascade,
     created_at timestamptz not null default now()
@@ -75,9 +62,6 @@ create index if not exists "SM_stories_date_idx"
     on public."SM_stories" (dream_date desc, created_at desc);
 create index if not exists "SM_award_nominees_award_idx"
     on public."SM_award_nominees" (award_id, created_at, story_id);
-create index if not exists "SM_votes_story_award_idx"
-    on public."SM_votes" (story_id, award_id);
-
 create or replace function public.sm_set_updated_at()
 returns trigger
 language plpgsql
@@ -475,47 +459,6 @@ begin
 end;
 $$;
 
-create or replace function public.sm_record_vote(
-    p_award_id uuid,
-    p_story_id uuid,
-    p_points smallint
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-    vote_row public."SM_votes";
-begin
-    if p_points is null or p_points not between 1 and 10 then
-        raise exception 'Points must be from 1 to 10.';
-    end if;
-
-    perform 1
-    from public."SM_awards"
-    where id = p_award_id
-    for update;
-    if not found then
-        raise exception 'Award was not found.';
-    end if;
-    if not exists (
-        select 1
-        from public."SM_award_nominees"
-        where award_id = p_award_id and story_id = p_story_id
-    ) then
-        raise exception 'This dream is not a nominee for this award.';
-    end if;
-
-    insert into public."SM_votes" (award_id, story_id, points)
-    values (p_award_id, p_story_id, p_points)
-    on conflict (award_id, story_id) do update
-    set points = excluded.points, updated_at = now()
-    returning * into vote_row;
-    return to_jsonb(vote_row);
-end;
-$$;
-
 drop trigger if exists "SM_stories_updated_at" on public."SM_stories";
 create trigger "SM_stories_updated_at"
 before update on public."SM_stories"
@@ -526,27 +469,11 @@ create trigger "SM_awards_updated_at"
 before update on public."SM_awards"
 for each row execute function public.sm_set_updated_at();
 
-drop trigger if exists "SM_votes_updated_at" on public."SM_votes";
-create trigger "SM_votes_updated_at"
-before update on public."SM_votes"
-for each row execute function public.sm_set_updated_at();
-
 alter table public."SM_stories" enable row level security;
 alter table public."SM_awards" enable row level security;
 alter table public."SM_award_nominees" enable row level security;
 alter table public."SM_award_winners" enable row level security;
-alter table public."SM_votes" enable row level security;
 alter table public."SM_admins" enable row level security;
-
-create or replace view public."SM_vote_totals" as
-select
-    award_id,
-    story_id,
-    count(*)::integer as vote_count,
-    coalesce(sum(points), 0)::integer as total_points,
-    round(avg(points)::numeric, 2) as average_points
-from public."SM_votes"
-group by award_id, story_id;
 
 insert into storage.buckets (id, name, public)
 values ('SM_story_images', 'SM_story_images', false)
@@ -574,10 +501,6 @@ drop policy if exists "SM winners public read" on public."SM_award_winners";
 drop policy if exists "SM winners admin insert" on public."SM_award_winners";
 drop policy if exists "SM winners admin update" on public."SM_award_winners";
 drop policy if exists "SM winners admin delete" on public."SM_award_winners";
-drop policy if exists "SM votes public read" on public."SM_votes";
-drop policy if exists "SM votes own insert" on public."SM_votes";
-drop policy if exists "SM votes own update" on public."SM_votes";
-drop policy if exists "SM votes own delete" on public."SM_votes";
 drop policy if exists "SM admins self read" on public."SM_admins";
 drop policy if exists "SM story images public read" on storage.objects;
 drop policy if exists "SM story images admin insert" on storage.objects;
@@ -588,9 +511,7 @@ revoke all on public."SM_stories" from anon, authenticated;
 revoke all on public."SM_awards" from anon, authenticated;
 revoke all on public."SM_award_nominees" from anon, authenticated;
 revoke all on public."SM_award_winners" from anon, authenticated;
-revoke all on public."SM_votes" from anon, authenticated;
 revoke all on public."SM_admins" from anon, authenticated;
-revoke all on public."SM_vote_totals" from anon, authenticated;
 revoke execute on function public.sm_is_admin() from anon, authenticated;
 revoke execute on function public.sm_alpha_suffix(integer) from public, anon, authenticated;
 revoke execute on function public.sm_renumber_stories() from public, anon, authenticated;
@@ -600,11 +521,9 @@ revoke execute on function public.sm_delete_story(uuid) from public, anon, authe
 revoke execute on function public.sm_replace_award_nominees(uuid, uuid[]) from public, anon, authenticated;
 revoke execute on function public.sm_set_award_winner(uuid, uuid, smallint) from public, anon, authenticated;
 revoke execute on function public.sm_remove_award_winner(uuid, smallint) from public, anon, authenticated;
-revoke execute on function public.sm_record_vote(uuid, uuid, smallint) from public, anon, authenticated;
 grant execute on function public.sm_create_story(text, date, jsonb, text, text) to service_role;
 grant execute on function public.sm_update_story(uuid, text, date, jsonb) to service_role;
 grant execute on function public.sm_delete_story(uuid) to service_role;
 grant execute on function public.sm_replace_award_nominees(uuid, uuid[]) to service_role;
 grant execute on function public.sm_set_award_winner(uuid, uuid, smallint) to service_role;
 grant execute on function public.sm_remove_award_winner(uuid, smallint) to service_role;
-grant execute on function public.sm_record_vote(uuid, uuid, smallint) to service_role;

@@ -11,7 +11,7 @@ SOMNIVA_PASSWORD=<owner-password>
 SOMNIVA_TOKEN_SECRET=<random-long-secret>
 ```
 
-There is no Supabase Auth login and no anonymous sign-in. The Edge Function issues a short-lived session token after the password is verified. Stories, awards, votes, winner selections, and images are protected by private RLS/storage policies.
+There is no Supabase Auth login and no anonymous sign-in. The Edge Function issues a short-lived session token after the password is verified. Stories, awards, nominee selections, winner selections, and images are protected by private RLS/storage policies.
 
 ## Supabase Migration
 
@@ -22,7 +22,7 @@ supabase link --project-ref nirtjqjcqaxlrskuvpjy
 supabase db push --linked --include-all
 ```
 
-The migrations make the existing tables private, add `image_prompt`, persist per-award nominees, and keep one owner score per story and award. The latest migration backfills every current winner (and any already-voted story) as a nominee, then normalizes stories into date-driven pages beginning at `p1`.
+The migrations make the existing tables private, add `image_prompt`, persist per-award nominees, remove the scoring system, and normalize stories into date-driven pages beginning at `p1`. The nominee migration backfills every current winner and previously nominated story before scoring is removed.
 
 Set the Edge Function secrets without committing them:
 
@@ -53,11 +53,11 @@ The function uses Supabase's server-side `SUPABASE_SERVICE_ROLE_KEY` automatical
 
 The generator always uses the same cinematic surreal dream-journal style: indigo, violet, midnight blue, moonlight, symbolic atmosphere, painterly realism, softly blurred unrecognizable faces, and no text or watermarks.
 
-Hall of Fame podium places are edited directly from their cards. Each award has a persisted nominee list, and a nominee can appear only once across Top 1, Top 2, and Top 3. Podium moves are atomic and may leave gaps; votes and winner assignments are accepted only for nominees.
+Hall of Fame podium places are edited directly from their cards. Each award has a persisted nominee list, and a nominee can appear only once across Top 1, Top 2, and Top 3. Podium moves are atomic and may leave gaps. Dreams display their award and nominee status without a scoring system.
 
 ## Backend Actions
 
-`collection` (and the legacy `archive` alias) returns `stories`, `awards`, `nominees`, `winners`, and `voteTotals` through the password-protected Edge Function. Nominee rows contain `id`, `award_id`, `story_id`, and `created_at`.
+`collection` (and the legacy `archive` alias) returns `stories`, `awards`, `nominees`, and `winners` through the password-protected Edge Function. Nominee rows contain `id`, `award_id`, `story_id`, and `created_at`.
 
 Replace an award's nominees with story IDs using:
 
@@ -69,7 +69,7 @@ Replace an award's nominees with story IDs using:
 }
 ```
 
-`set-winner`, `vote`, `save-story`, `update-story`, and `delete-story` retain their existing action names. Story create/update/delete responses contain the final date-driven `page_number` and `link` after atomic renumbering. The legacy `page_number` form field is accepted but ignored.
+`set-winner`, `save-story`, `update-story`, and `delete-story` are the primary story actions. Story create/update/delete responses contain the final date-driven `page_number` and `link` after atomic renumbering. The legacy `page_number` form field is accepted but ignored.
 
 ## Frontend Configuration
 

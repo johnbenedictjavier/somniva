@@ -147,15 +147,14 @@ function parseParagraphs(value: unknown) {
 }
 
 async function collectionPayload() {
-    const [storiesResult, awardsResult, winnersResult, nomineesResult, totalsResult] = await Promise.all([
+    const [storiesResult, awardsResult, winnersResult, nomineesResult] = await Promise.all([
         admin.from('SM_stories').select('*').order('page_number', { ascending: true }).order('link', { ascending: true }),
         admin.from('SM_awards').select('*').order('display_order', { ascending: true }).order('name', { ascending: true }),
         admin.from('SM_award_winners').select('id, award_id, story_id, rank'),
         admin.from('SM_award_nominees').select('id, award_id, story_id, created_at').order('created_at', { ascending: true }),
-        admin.from('SM_vote_totals').select('award_id, story_id, vote_count, total_points, average_points'),
     ]);
 
-    const error = storiesResult.error || awardsResult.error || winnersResult.error || nomineesResult.error || totalsResult.error;
+    const error = storiesResult.error || awardsResult.error || winnersResult.error || nomineesResult.error;
     if (error) throw error;
 
     const stories = await Promise.all((storiesResult.data ?? []).map(async (story) => {
@@ -169,7 +168,6 @@ async function collectionPayload() {
         awards: awardsResult.data ?? [],
         winners: winnersResult.data ?? [],
         nominees: nomineesResult.data ?? [],
-        voteTotals: totalsResult.data ?? [],
     };
 }
 
@@ -440,7 +438,7 @@ async function deleteAward(body: Record<string, unknown>) {
     const existing = await admin.from('SM_awards').select('id, name').eq('id', awardId).single();
     if (existing.error) throw existing.error;
 
-    // SM_award_winners and SM_votes reference awards with ON DELETE CASCADE.
+    // SM_award_winners and nominees reference awards with ON DELETE CASCADE.
     const result = await admin.from('SM_awards').delete().eq('id', awardId);
     if (result.error) throw result.error;
     return { deleted: true, award_id: awardId, name: existing.data.name };
@@ -481,19 +479,7 @@ async function handleAction(action: string, body: Record<string, unknown>, formD
         return result.data;
     }
 
-    if (action === 'vote') {
-        const awardId = requiredText(body.award_id, 'Award', 80);
-        const storyId = requiredText(body.story_id, 'Story', 80);
-        const points = Number(body.points);
-        if (!Number.isInteger(points) || points < 1 || points > 10) throw new Error('Points must be from 1 to 10.');
-        const result = await admin.rpc('sm_record_vote', {
-            p_award_id: awardId,
-            p_story_id: storyId,
-            p_points: points,
-        });
-        if (result.error) throw result.error;
-        return result.data;
-    }
+    if (action === 'vote') throw new Error('Scoring is disabled.');
 
     throw new Error('Unknown action.');
 }
