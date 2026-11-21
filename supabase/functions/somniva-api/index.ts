@@ -115,6 +115,19 @@ function storyPayload(value: Record<string, unknown>) {
     };
 }
 
+function inputValue(body: Record<string, unknown>, formData: FormData | null, field: string) {
+    return formData ? formData.get(field) : body[field];
+}
+
+function parseParagraphs(value: unknown) {
+    if (typeof value !== 'string') return value;
+    try {
+        return JSON.parse(value);
+    } catch {
+        throw new Error('Dream content is invalid.');
+    }
+}
+
 async function collectionPayload() {
     const [storiesResult, awardsResult, winnersResult, nomineesResult, totalsResult] = await Promise.all([
         admin.from('SM_stories').select('*').order('page_number', { ascending: true }).order('link', { ascending: true }),
@@ -142,18 +155,16 @@ async function collectionPayload() {
     };
 }
 
-async function saveStory(request: Request, formData: FormData | null = null) {
-    const form = formData ?? await request.formData();
-    const rawPayload = {
-        title: form.get('title'),
-        dream_date: form.get('dream_date'),
-        paragraphs: JSON.parse(String(form.get('paragraphs') ?? '[]')),
-        image_prompt: form.get('image_prompt'),
-    };
-    const story = storyPayload(rawPayload);
+async function saveStory(body: Record<string, unknown>, formData: FormData | null = null) {
+    const story = storyPayload({
+        title: inputValue(body, formData, 'title'),
+        dream_date: inputValue(body, formData, 'dream_date'),
+        paragraphs: parseParagraphs(inputValue(body, formData, 'paragraphs')),
+        image_prompt: inputValue(body, formData, 'image_prompt'),
+    });
 
     // Accept the previous one-step upload shape while new clients use the follow-up upload action.
-    const file = form.get('image');
+    const file = formData?.get('image');
     let imagePath: string | null = null;
     if (file instanceof File && file.size > 0) {
         if (file.size > 12 * 1024 * 1024) throw new Error('Cover photo must be 12 MB or smaller.');
@@ -182,29 +193,26 @@ async function saveStory(request: Request, formData: FormData | null = null) {
     return insert.data;
 }
 
-async function updateStory(request: Request, formData: FormData | null = null) {
-    const form = formData ?? await request.formData();
-    const storyId = requiredText(form.get('story_id'), 'Story', 80);
-    const title = requiredText(form.get('title'), 'Title', 180);
-    const dreamDate = requiredText(form.get('dream_date'), 'Dream date', 20);
-    const paragraphs = JSON.parse(String(form.get('paragraphs') ?? '[]'));
-    if (!Array.isArray(paragraphs) || !paragraphs.length) throw new Error('At least one paragraph is required.');
-
-    const cleanParagraphs = paragraphs.map((paragraph) => requiredTextPreservingWhitespace(paragraph, 'Paragraph', 20000));
+async function updateStory(body: Record<string, unknown>, formData: FormData | null = null) {
+    const storyId = requiredText(inputValue(body, formData, 'story_id'), 'Story', 80);
+    const story = storyPayload({
+        title: inputValue(body, formData, 'title'),
+        dream_date: inputValue(body, formData, 'dream_date'),
+        paragraphs: parseParagraphs(inputValue(body, formData, 'paragraphs')),
+    });
     const result = await admin.rpc('sm_update_story', {
         p_story_id: storyId,
-        p_title: title,
-        p_dream_date: dreamDate,
-        p_paragraphs: cleanParagraphs,
+        p_title: story.title,
+        p_dream_date: story.dream_date,
+        p_paragraphs: story.paragraphs,
     });
     if (result.error) throw result.error;
     return result.data;
 }
 
-async function uploadStoryImage(request: Request, formData: FormData | null = null) {
-    const form = formData ?? await request.formData();
-    const storyId = requiredText(form.get('story_id'), 'Story', 80);
-    const file = form.get('image');
+async function uploadStoryImage(formData: FormData | null = null) {
+    const storyId = requiredText(formData?.get('story_id'), 'Story', 80);
+    const file = formData?.get('image');
     if (!(file instanceof File) || file.size === 0) throw new Error('A cover photo is required.');
     if (file.size > 12 * 1024 * 1024) throw new Error('Cover photo must be 12 MB or smaller.');
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPG, PNG, or WebP image.');
@@ -420,12 +428,12 @@ async function deleteAward(body: Record<string, unknown>) {
     return { deleted: true, award_id: awardId, name: existing.data.name };
 }
 
-async function handleAction(action: string, request: Request, body: Record<string, unknown>, formData: FormData | null = null) {
+async function handleAction(action: string, body: Record<string, unknown>, formData: FormData | null = null) {
     // Keep the previous action name valid while installed PWAs receive the new shell.
     if (action === 'collection' || action === 'archive') return collectionPayload();
-    if (action === 'save-story' || action === 'create-story') return saveStory(request, formData);
-    if (action === 'update-story') return updateStory(request, formData);
-    if (action === 'upload-story-image') return uploadStoryImage(request, formData);
+    if (action === 'save-story' || action === 'create-story') return saveStory(body, formData);
+    if (action === 'update-story') return updateStory(body, formData);
+    if (action === 'upload-story-image') return uploadStoryImage(formData);
     if (action === 'save-story-prompt') return saveStoryPrompt(body);
     if (action === 'save-story-comment') return saveStoryComment(body);
     if (action === 'update-story-comment') return updateStoryComment(body);
@@ -494,7 +502,7 @@ Deno.serve(async (request) => {
         }
 
         if (!await isValidToken(request)) return jsonResponse({ error: 'Unlock Somniva first.' }, 401);
-        const result = await handleAction(action, request, body ?? {}, formData);
+        const result = await handleAction(action, body ?? {}, formData);
         return jsonResponse(result);
     } catch (error) {
         console.error(error);

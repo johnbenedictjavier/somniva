@@ -320,10 +320,18 @@ async function apiRequest(action, payload = {}) {
     }
 
     const response = await fetch(SOMNIVA_CONFIG.apiUrl, { method: 'POST', headers, body });
-    const data = await response.json().catch(() => ({}));
+    const responseText = await response.text();
+    let data = {};
+    if (responseText) {
+        try {
+            data = JSON.parse(responseText);
+        } catch {
+            data = { error: responseText.trim() };
+        }
+    }
     if (!response.ok) {
         if (response.status === 401 && action !== 'unlock') lockApp('Your private session expired. Unlock Somniva again.');
-        throw new Error(data.error || 'Somniva could not complete that request.');
+        throw new Error(data?.error || `Somniva could not complete that request (${response.status}).`);
     }
     return data;
 }
@@ -467,7 +475,6 @@ function normalizeStory(story) {
 
 async function loadCollection(showStatus = true) {
     setAppLoading(true);
-    if (showStatus) showDataStatus('Refreshing your dreambook...');
     try {
         const collection = await apiRequest('collection');
         applyCollection(collection);
@@ -1007,7 +1014,7 @@ async function saveNominees() {
         return;
     }
 
-    status.textContent = 'Saving nominees...';
+    status.textContent = '';
     try {
         await persistNominees(awardId, storyIds);
     } catch (error) {
@@ -1038,7 +1045,7 @@ function openWinnerStory() {
 async function saveWinnerRank(rank) {
     if (!state.winnerSlot?.isNominee || ![1, 2, 3].includes(rank)) return;
     const status = $('#winner-form-status');
-    status.textContent = 'Saving podium place...';
+    status.textContent = '';
     const buttons = $$('#winner-rank-actions button');
     buttons.forEach((button) => setButtonLoading(button, true));
     try {
@@ -1368,7 +1375,7 @@ async function handleVoteSubmit(event) {
         return;
     }
     const submitButton = $('#vote-form button[type="submit"]');
-    status.textContent = 'Saving your points...';
+    status.textContent = '';
     setButtonLoading(submitButton, true);
     try {
         await apiRequest('vote', {
@@ -1435,18 +1442,19 @@ async function handleStorySubmit(event) {
     }
 
     const editing = state.editingStory;
-    status.textContent = editing ? 'Saving changes...' : 'Creating the dream...';
+    status.textContent = '';
     const submitButton = $('#story-form button[type="submit"]');
     setButtonLoading(submitButton, true);
-    const form = new FormData();
-    form.append('title', title);
-    if (editing) form.append('story_id', editing.id);
-    form.append('dream_date', dreamDate);
-    form.append('paragraphs', JSON.stringify([content]));
+    const payload = {
+        ...(editing ? { story_id: editing.id } : {}),
+        title,
+        dream_date: dreamDate,
+        paragraphs: [content],
+    };
 
     let saved;
     try {
-        saved = await apiRequest(editing ? 'update-story' : 'save-story', form);
+        saved = await apiRequest(editing ? 'update-story' : 'save-story', payload);
     } catch (error) {
         status.textContent = error.message || (editing ? 'Unable to update the dream.' : 'Unable to create the dream.');
         setButtonLoading(submitButton, false);
@@ -1476,7 +1484,7 @@ async function handleAwardSubmit(event) {
     const status = $('#award-form-status');
     const submitButton = $('#award-form button[type="submit"]');
     const editing = state.editingAward;
-    status.textContent = editing ? 'Saving award changes...' : 'Saving award...';
+    status.textContent = '';
     setButtonLoading(submitButton, true);
     try {
         await apiRequest(editing ? 'update-award' : 'save-award', {
@@ -1506,7 +1514,7 @@ async function handleCommentSubmit(event) {
         status.textContent = 'Add a date and comment first.';
         return;
     }
-    status.textContent = 'Saving comment...';
+    status.textContent = '';
     setButtonLoading(submitButton, true);
     const editing = state.editingComment;
     try {
@@ -1656,7 +1664,7 @@ async function handleStoryImageUpload() {
         status.textContent = 'Choose an image first.';
         return;
     }
-    status.textContent = 'Uploading cover...';
+    status.textContent = '';
     setButtonLoading(uploadButton, true);
     const form = new FormData();
     form.append('story_id', state.imageStory.id);
@@ -1815,7 +1823,7 @@ async function handleConfirmationConfirm() {
     const button = $('#confirmation-confirm');
     const status = $('#confirmation-status');
     setButtonLoading(button, true);
-    status.textContent = 'Working...';
+    status.textContent = '';
     try {
         await action();
         closeModal('confirmation-modal');
