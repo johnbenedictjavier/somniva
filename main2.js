@@ -62,9 +62,9 @@ const iconMarkup = {
     edit: '<path d="m4 16.5-.8 3.3 3.3-.8L18.8 6.7a2.1 2.1 0 0 0-3-3L4 16.5Z" /><path d="m14.5 5.5 4 4" />',
     delete: '<path d="M5 7h14M10 11v5M14 11v5M9 7V4h6v3M7 7l.8 13h8.4L17 7" />',
     nominees: '<path d="M4 6h16M4 12h16M4 18h10" /><path d="m17 16 2 2 3-4" />',
-    top1: '<path d="m4 8 3 3 5-6 5 6 3-3-1.5 11h-13L4 8Z" /><path d="M5 19h14" />',
-    top2: '<circle cx="12" cy="8" r="4" /><path d="m8.8 11-1.6 9 4.8-2.5 4.8 2.5-1.6-9" />',
-    top3: '<circle cx="12" cy="8" r="4" /><path d="m8.8 11-1.6 9 4.8-2.5 4.8 2.5-1.6-9" />',
+    top1: '<path d="M7 3h3l2 4 2-4h3l-3 6h-4L7 3Z" /><circle cx="12" cy="15" r="5.5" /><path d="M12 12.5v5M10.5 14l1.5-1.5 1.5 1.5" />',
+    top2: '<path d="M6 3h3.5l2.5 4 2.5-4H18l-3 6H9L6 3Z" /><circle cx="12" cy="15" r="5.5" /><path d="M10.3 14c.2-1 1-1.5 1.9-1.5 1 0 1.7.5 1.7 1.2 0 .8-.7 1.2-1.5 1.8l-1.8 1.3h3.5" />',
+    top3: '<path d="M8 3h3l1 4 1-4h3l-2 6h-4L8 3Z" /><circle cx="12" cy="15" r="5.5" /><path d="M10.5 13.1c.4-.4 1-.6 1.6-.6 1 0 1.7.5 1.7 1.2 0 .6-.5 1-1.2 1.2.8.1 1.4.6 1.4 1.3 0 .9-.8 1.5-1.9 1.5-.7 0-1.4-.3-1.8-.8" />',
     nominee: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z" />',
 };
 
@@ -661,7 +661,11 @@ function createAwardStatusBadge(status, className) {
     const icon = document.createElement('span');
     icon.className = 'award-status-icon';
     icon.setAttribute('aria-hidden', 'true');
-    icon.innerHTML = iconMarkup[status.kind === 'winner' ? `top${status.rank}` : 'nominee'] || iconMarkup.nominee;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = iconMarkup[status.kind === 'winner' ? `top${status.rank}` : 'nominee'] || iconMarkup.nominee;
+    icon.append(svg);
     badge.append(icon);
     return badge;
 }

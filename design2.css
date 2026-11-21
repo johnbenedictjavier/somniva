@@ -1516,9 +1516,9 @@ label {
 
 .award-status-icon {
     display: inline-grid;
-    width: 13px;
-    height: 13px;
-    flex: 0 0 13px;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
     place-items: center;
 }
 
@@ -1530,6 +1530,10 @@ label {
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-width: 1.8;
+}
+
+.story-status-badge.is-nominee .award-status-icon svg {
+    fill: currentColor;
 }
 
 .story-entry h1,
