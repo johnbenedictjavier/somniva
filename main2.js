@@ -65,6 +65,7 @@ const iconMarkup = {
     comment: '<path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4.5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" /><path d="M7 10h10M7 13h6" />',
     edit: '<path d="m4 16.5-.8 3.3 3.3-.8L18.8 6.7a2.1 2.1 0 0 0-3-3L4 16.5Z" /><path d="m14.5 5.5 4 4" />',
     delete: '<path d="M5 7h14M10 11v5M14 11v5M9 7V4h6v3M7 7l.8 13h8.4L17 7" />',
+    nominees: '<path d="M4 6h16M4 12h16M4 18h10" /><path d="m17 16 2 2 3-4" />',
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -587,12 +588,7 @@ function renderAwards() {
         const heading = document.createElement('h2');
         heading.className = 'category-name';
         heading.textContent = award.name;
-        const nomineeButton = document.createElement('button');
-        nomineeButton.className = 'secondary-button nominee-button';
-        nomineeButton.type = 'button';
-        nomineeButton.dataset.manageNominees = award.id;
-        nomineeButton.innerHTML = '<span class="nominee-button-mark" aria-hidden="true">+</span><span>Nominees</span>';
-        headingRow.append(heading, nomineeButton);
+        headingRow.append(heading);
         const description = document.createElement('p');
         description.className = 'subtitle under';
         description.textContent = award.description || 'A distinction chosen for a memorable dream.';
@@ -601,10 +597,8 @@ function renderAwards() {
         const nomineeLabel = document.createElement('div');
         nomineeLabel.className = 'nominee-section-heading';
         const nomineeTitle = document.createElement('span');
-        nomineeTitle.textContent = 'Nominee constellation';
-        const nomineeCount = document.createElement('small');
-        nomineeCount.textContent = `${getNomineeStories(award.id).length} selected`;
-        nomineeLabel.append(nomineeTitle, nomineeCount);
+        nomineeTitle.textContent = 'NOMINEES';
+        nomineeLabel.append(nomineeTitle);
         nomineeSection.append(nomineeLabel, createNomineeRail(award));
         const podium = document.createElement('div');
         podium.className = 'podium';
@@ -615,7 +609,7 @@ function renderAwards() {
             podium.append(createWinnerCard(story, rank, award.id));
         });
 
-        group.append(headingRow, description, nomineeSection, podium);
+        group.append(headingRow, description, podium, nomineeSection);
         container.append(group);
     });
 }
@@ -656,12 +650,10 @@ function createNomineeRail(award) {
             card.tabIndex = -1;
         }
         const image = createStoryImage(story, 'nominee-image image-thumbnail');
-        const label = document.createElement('span');
-        label.className = 'marquee-label';
-        label.textContent = 'Nominee';
         const title = document.createElement('strong');
+        title.className = 'nominee-card-title';
         title.textContent = story.title;
-        card.append(image, label, title);
+        card.append(image, title);
         track.append(card);
     });
     viewport.append(track);
@@ -710,6 +702,13 @@ function renderAwardOrder() {
         name.textContent = award.name;
         const actions = document.createElement('span');
         actions.className = 'award-order-actions';
+        const nominees = document.createElement('button');
+        nominees.className = 'award-order-action award-nominees-action';
+        nominees.type = 'button';
+        nominees.dataset.manageNominees = award.id;
+        nominees.setAttribute('aria-label', `Manage nominees for ${award.name}`);
+        nominees.title = 'Manage nominees';
+        nominees.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${iconMarkup.nominees}</svg><span class="visually-hidden">Nominees</span>`;
         const edit = document.createElement('button');
         edit.className = 'award-order-action';
         edit.type = 'button';
@@ -724,7 +723,7 @@ function renderAwardOrder() {
         remove.setAttribute('aria-label', `Delete ${award.name}`);
         remove.title = 'Delete award';
         remove.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${iconMarkup.delete}</svg><span class="visually-hidden">Delete</span>`;
-        actions.append(edit, remove);
+        actions.append(nominees, edit, remove);
         item.append(handle, name, actions);
         list.append(item);
     });
@@ -1445,12 +1444,19 @@ async function handleStorySubmit(event) {
     form.append('dream_date', dreamDate);
     form.append('paragraphs', JSON.stringify([content]));
 
+    let saved;
     try {
-        const saved = await apiRequest(editing ? 'update-story' : 'save-story', form);
-        resetStoryModal();
-        closeModal('story-modal');
-        showToast(editing ? 'Dream updated.' : `Dream created as ${saved.link}.`);
-        status.textContent = '';
+        saved = await apiRequest(editing ? 'update-story' : 'save-story', form);
+    } catch (error) {
+        status.textContent = error.message || (editing ? 'Unable to update the dream.' : 'Unable to create the dream.');
+        setButtonLoading(submitButton, false);
+        return;
+    }
+
+    resetStoryModal();
+    closeModal('story-modal');
+    showToast(editing ? 'Dream updated.' : `Dream created as ${saved?.link || 'a new page'}.`);
+    try {
         await loadCollection(false);
         const savedStory = state.stories.find((story) => story.id === saved?.id)
             || state.stories.find((story) => story.link === saved?.link);
@@ -1459,7 +1465,7 @@ async function handleStorySubmit(event) {
             goToStory(savedStory.link);
         }
     } catch (error) {
-        status.textContent = error.message || (editing ? 'Unable to update the dream.' : 'Unable to create the dream.');
+        showToast(error.message || 'Dream saved. Refresh the dreambook to see it.');
     } finally {
         setButtonLoading(submitButton, false);
     }

@@ -142,8 +142,8 @@ async function collectionPayload() {
     };
 }
 
-async function saveStory(request: Request) {
-    const form = await request.formData();
+async function saveStory(request: Request, formData: FormData | null = null) {
+    const form = formData ?? await request.formData();
     const rawPayload = {
         title: form.get('title'),
         dream_date: form.get('dream_date'),
@@ -182,8 +182,8 @@ async function saveStory(request: Request) {
     return insert.data;
 }
 
-async function updateStory(request: Request) {
-    const form = await request.formData();
+async function updateStory(request: Request, formData: FormData | null = null) {
+    const form = formData ?? await request.formData();
     const storyId = requiredText(form.get('story_id'), 'Story', 80);
     const title = requiredText(form.get('title'), 'Title', 180);
     const dreamDate = requiredText(form.get('dream_date'), 'Dream date', 20);
@@ -201,8 +201,8 @@ async function updateStory(request: Request) {
     return result.data;
 }
 
-async function uploadStoryImage(request: Request) {
-    const form = await request.formData();
+async function uploadStoryImage(request: Request, formData: FormData | null = null) {
+    const form = formData ?? await request.formData();
     const storyId = requiredText(form.get('story_id'), 'Story', 80);
     const file = form.get('image');
     if (!(file instanceof File) || file.size === 0) throw new Error('A cover photo is required.');
@@ -420,12 +420,12 @@ async function deleteAward(body: Record<string, unknown>) {
     return { deleted: true, award_id: awardId, name: existing.data.name };
 }
 
-async function handleAction(action: string, request: Request, body: Record<string, unknown>) {
+async function handleAction(action: string, request: Request, body: Record<string, unknown>, formData: FormData | null = null) {
     // Keep the previous action name valid while installed PWAs receive the new shell.
     if (action === 'collection' || action === 'archive') return collectionPayload();
-    if (action === 'save-story') return saveStory(request);
-    if (action === 'update-story') return updateStory(request);
-    if (action === 'upload-story-image') return uploadStoryImage(request);
+    if (action === 'save-story' || action === 'create-story') return saveStory(request, formData);
+    if (action === 'update-story') return updateStory(request, formData);
+    if (action === 'upload-story-image') return uploadStoryImage(request, formData);
     if (action === 'save-story-prompt') return saveStoryPrompt(body);
     if (action === 'save-story-comment') return saveStoryComment(body);
     if (action === 'update-story-comment') return updateStoryComment(body);
@@ -481,9 +481,11 @@ Deno.serve(async (request) => {
 
     try {
         const contentType = request.headers.get('content-type') ?? '';
-        const body = contentType.includes('multipart/form-data') ? null : await request.json();
-        const action = contentType.includes('multipart/form-data')
-            ? String((await request.clone().formData()).get('action') ?? '')
+        const isMultipart = contentType.includes('multipart/form-data');
+        const formData = isMultipart ? await request.formData() : null;
+        const body = isMultipart ? null : await request.json();
+        const action = isMultipart
+            ? String(formData?.get('action') ?? '')
             : String(body?.action ?? '');
 
         if (action === 'unlock') {
@@ -492,7 +494,7 @@ Deno.serve(async (request) => {
         }
 
         if (!await isValidToken(request)) return jsonResponse({ error: 'Unlock Somniva first.' }, 401);
-        const result = await handleAction(action, request, body ?? {});
+        const result = await handleAction(action, request, body ?? {}, formData);
         return jsonResponse(result);
     } catch (error) {
         console.error(error);
