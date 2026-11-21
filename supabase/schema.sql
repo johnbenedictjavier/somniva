@@ -143,8 +143,9 @@ begin
     from public."SM_stories" as current_story;
 
     -- Move every link out of the final namespace before assigning new links.
-    update public."SM_stories"
-    set link = '__somniva_renumber__' || id::text;
+    update public."SM_stories" as story
+    set link = '__somniva_renumber__' || story.id::text
+    where story.id is not null;
 
     update public."SM_stories" as story
     set
