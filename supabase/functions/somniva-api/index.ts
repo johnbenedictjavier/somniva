@@ -29,6 +29,24 @@ function jsonResponse(body: unknown, status = 200) {
     });
 }
 
+function errorMessage(error: unknown) {
+    if (error instanceof Error && error.message) return error.message;
+    if (error && typeof error === 'object') {
+        const details = error as Record<string, unknown>;
+        const message = typeof details.message === 'string' ? details.message.trim() : '';
+        const hint = typeof details.hint === 'string' ? details.hint.trim() : '';
+        const detail = typeof details.details === 'string' ? details.details.trim() : '';
+        const parts = [message, detail, hint].filter(Boolean);
+        if (parts.length) return parts.join(' ');
+        try {
+            return JSON.stringify(error);
+        } catch {
+            return '';
+        }
+    }
+    return '';
+}
+
 function base64UrlEncode(value: string | Uint8Array) {
     const bytes = typeof value === 'string' ? encoder.encode(value) : value;
     let binary = '';
@@ -506,6 +524,6 @@ Deno.serve(async (request) => {
         return jsonResponse(result);
     } catch (error) {
         console.error(error);
-        return jsonResponse({ error: error instanceof Error ? error.message : 'Somniva could not complete that request.' }, 400);
+        return jsonResponse({ error: errorMessage(error) || 'Somniva could not complete that request.' }, 400);
     }
 });
