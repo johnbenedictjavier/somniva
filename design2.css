@@ -1464,50 +1464,52 @@ label {
     pointer-events: none;
 }
 
-.story-status-badge,
-.story-award-status {
-    display: inline-flex;
-    min-width: 0;
-    align-items: center;
-    gap: 5px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 999px;
-    background: rgba(15, 12, 41, 0.86);
-    color: var(--text);
-    font-size: 0.61rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    line-height: 1;
-    white-space: nowrap;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+.story-status-badges.is-decorative .story-status-badge {
+    pointer-events: none;
 }
 
 .story-status-badge {
-    padding: 5px 7px 5px 6px;
+    display: inline-grid;
+    width: 30px;
+    height: 30px;
+    padding: 7px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    background: rgba(15, 12, 41, 0.86);
+    color: var(--text);
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     box-shadow: 0 5px 14px rgba(0, 0, 0, 0.28);
+    pointer-events: auto;
+    transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
 }
 
-.story-status-badge.is-top-1,
-.story-award-status.is-top-1 {
+.story-status-badge:hover,
+.story-status-badge:focus-visible {
+    transform: scale(1.08);
+    background: rgba(15, 12, 41, 0.98);
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.story-status-badge.is-top-1 {
     border-color: rgba(255, 231, 167, 0.7);
     color: #ffe7a7;
 }
 
-.story-status-badge.is-top-2,
-.story-award-status.is-top-2 {
+.story-status-badge.is-top-2 {
     border-color: rgba(214, 224, 239, 0.7);
     color: #d6e0ef;
 }
 
-.story-status-badge.is-top-3,
-.story-award-status.is-top-3 {
+.story-status-badge.is-top-3 {
     border-color: rgba(221, 164, 116, 0.72);
     color: #e0a674;
 }
 
-.story-status-badge.is-nominee,
-.story-award-status.is-nominee {
+.story-status-badge.is-nominee {
     border-color: rgba(214, 190, 255, 0.62);
     color: #decfff;
 }
@@ -1528,33 +1530,6 @@ label {
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-width: 1.8;
-}
-
-.story-award-statuses {
-    display: grid;
-    max-width: 780px;
-    gap: 9px;
-    margin: -5px auto 25px;
-}
-
-.story-award-statuses-heading {
-    color: var(--muted);
-    font-size: 0.62rem;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    text-align: center;
-    text-transform: uppercase;
-}
-
-.story-award-status-list {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 7px;
-}
-
-.story-award-status {
-    padding: 7px 10px 7px 8px;
 }
 
 .story-entry h1,

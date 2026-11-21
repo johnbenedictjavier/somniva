@@ -530,7 +530,7 @@ function renderHomeMarquee() {
             card.tabIndex = -1;
         }
         const image = createStoryImage(story, 'marquee-image');
-        appendStoryStatusBadges(card, story);
+        appendStoryStatusBadges(card, story, index < firstPlaces.length);
         const label = document.createElement('span');
         label.className = 'marquee-label';
         label.textContent = award.name;
@@ -632,49 +632,53 @@ function getAwardStatusLabel(status) {
     return status.kind === 'winner' ? rankLabel(status.rank) : 'Nominee';
 }
 
-function createAwardStatusBadge(status, className, includeAwardName = false) {
+function showAwardStatusName(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    showToast(event.currentTarget.dataset.awardName);
+}
+
+function handleAwardStatusKeydown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    event.stopPropagation();
+    showToast(event.currentTarget.dataset.awardName);
+}
+
+function createAwardStatusBadge(status, className) {
     const label = getAwardStatusLabel(status);
     const badge = document.createElement('span');
     const statusClass = status.kind === 'winner' ? `is-top-${status.rank}` : 'is-nominee';
     const accessibleLabel = `${status.award.name} · ${label}`;
     badge.className = `${className} ${statusClass}`;
-    badge.title = accessibleLabel;
-    badge.setAttribute('role', 'img');
+    badge.dataset.awardName = status.award.name;
+    badge.setAttribute('role', 'button');
+    badge.setAttribute('tabindex', '0');
     badge.setAttribute('aria-label', accessibleLabel);
+    badge.addEventListener('click', showAwardStatusName);
+    badge.addEventListener('keydown', handleAwardStatusKeydown);
 
     const icon = document.createElement('span');
     icon.className = 'award-status-icon';
     icon.setAttribute('aria-hidden', 'true');
     icon.innerHTML = iconMarkup[status.kind === 'winner' ? `top${status.rank}` : 'nominee'] || iconMarkup.nominee;
-    const text = document.createElement('span');
-    text.textContent = includeAwardName ? accessibleLabel : label;
-    badge.append(icon, text);
+    badge.append(icon);
     return badge;
 }
 
-function appendStoryStatusBadges(container, story) {
+function appendStoryStatusBadges(container, story, isInteractive = true) {
     if (!container || !story) return;
     const statuses = getStoryAwardStatuses(story.id);
     if (!statuses.length) return;
     const stack = document.createElement('span');
     stack.className = 'story-status-badges';
     statuses.forEach((status) => stack.append(createAwardStatusBadge(status, 'story-status-badge')));
+    if (!isInteractive) {
+        stack.classList.add('is-decorative');
+        stack.setAttribute('aria-hidden', 'true');
+        stack.querySelectorAll('[role="button"]').forEach((badge) => badge.setAttribute('tabindex', '-1'));
+    }
     container.append(stack);
-}
-
-function createStoryAwardSummary(story) {
-    const statuses = getStoryAwardStatuses(story.id);
-    if (!statuses.length) return null;
-    const summary = document.createElement('div');
-    summary.className = 'story-award-statuses';
-    const heading = document.createElement('span');
-    heading.className = 'story-award-statuses-heading';
-    heading.textContent = 'Award status';
-    const list = document.createElement('div');
-    list.className = 'story-award-status-list';
-    statuses.forEach((status) => list.append(createAwardStatusBadge(status, 'story-award-status', true)));
-    summary.append(heading, list);
-    return summary;
 }
 
 function createNomineeRail(award) {
@@ -703,7 +707,6 @@ function createNomineeRail(award) {
         title.className = 'nominee-card-title';
         title.textContent = story.title;
         card.append(image, title);
-        appendStoryStatusBadges(card, story);
         track.append(card);
     });
     viewport.append(track);
@@ -894,7 +897,6 @@ function createWinnerCard(story, rank, awardId) {
 
     if (story) {
         frame.append(createStoryImage(story, 'winner-image'));
-        appendStoryStatusBadges(frame, story);
     } else {
         const empty = document.createElement('span');
         empty.className = 'winner-placeholder';
@@ -986,7 +988,6 @@ function renderNomineeGrid() {
         title.className = 'nominee-option-title';
         title.textContent = story.title;
         option.append(image, title);
-        appendStoryStatusBadges(option, story);
         grid.append(option);
     });
 }
@@ -1302,14 +1303,12 @@ function createStoryArticle(story) {
     title.textContent = story.title;
     const date = document.createElement('h3');
     date.textContent = formatDate(story.dream_date);
-    const awardSummary = createStoryAwardSummary(story);
     const content = document.createElement('div');
     content.className = 'story-content';
     content.id = `${story.link}-content`;
     content.innerHTML = sanitizeHtml(getStoryContent(story));
 
     article.append(topLine, picture, title, date);
-    if (awardSummary) article.append(awardSummary);
     article.append(content);
     story.comments.forEach((comment, index) => {
         const commentCard = document.createElement('div');
