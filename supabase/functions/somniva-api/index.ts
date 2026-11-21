@@ -91,75 +91,40 @@ function requiredText(value: unknown, field: string, maxLength = 10000) {
     return value.trim();
 }
 
-function alphaSuffix(index: number) {
-    let value = index;
-    let suffix = '';
-    while (value > 0) {
-        value -= 1;
-        suffix = String.fromCharCode(97 + (value % 26)) + suffix;
-        value = Math.floor(value / 26);
+function requiredTextPreservingWhitespace(value: unknown, field: string, maxLength = 10000) {
+    if (typeof value !== 'string' || !value.trim() || value.length > maxLength) {
+        throw new Error(`${field} is required.`);
     }
-    return suffix;
+    return value;
 }
 
-async function nextStoryPlacement(requestedPage: unknown) {
-    const requestedValue = typeof requestedPage === 'string' ? requestedPage.trim() : requestedPage;
-    const selectedPage = requestedValue === '' || requestedValue === null || requestedValue === undefined
-        ? null
-        : Number(requestedValue);
-
-    if (selectedPage !== null && (!Number.isInteger(selectedPage) || selectedPage < 1)) {
-        throw new Error('The selected page is invalid.');
-    }
-
-    const result = await admin.from('SM_stories').select('page_number, link');
-    if (result.error) throw result.error;
-
-    const stories = result.data ?? [];
-    if (selectedPage !== null && !stories.some((story) => Number(story.page_number) === selectedPage)) {
-        throw new Error('Choose an existing page or use automatic placement.');
-    }
-    const pageNumber = selectedPage ?? Math.max(0, ...stories.map((story) => Number(story.page_number) || 0)) + 1;
-    const existingLinks = new Set(stories.map((story) => String(story.link).toLowerCase()));
-    const baseLink = `p${pageNumber}`;
-
-    if (!existingLinks.has(baseLink)) return { pageNumber, link: baseLink };
-
-    let suffixIndex = 1;
-    while (existingLinks.has(`${baseLink}${alphaSuffix(suffixIndex)}`)) suffixIndex += 1;
-    return { pageNumber, link: `${baseLink}${alphaSuffix(suffixIndex)}` };
-}
-
-function storyPayload(value: Record<string, unknown>, placement: { pageNumber: number; link: string }) {
+function storyPayload(value: Record<string, unknown>) {
     const title = requiredText(value.title, 'Title', 180);
 
     const dreamDate = requiredText(value.dream_date, 'Dream date', 20);
     const paragraphs = Array.isArray(value.paragraphs)
-        ? value.paragraphs.map((paragraph) => requiredText(paragraph, 'Paragraph', 20000))
+        ? value.paragraphs.map((paragraph) => requiredTextPreservingWhitespace(paragraph, 'Paragraph', 20000))
         : [];
     if (!paragraphs.length) throw new Error('At least one paragraph is required.');
 
     return {
         title,
-        page_number: placement.pageNumber,
-        link: placement.link,
         dream_date: dreamDate,
         paragraphs,
-        comments: [],
         image_prompt: typeof value.image_prompt === 'string' ? value.image_prompt.trim().slice(0, 12000) : '',
-        published: true,
     };
 }
 
 async function collectionPayload() {
-    const [storiesResult, awardsResult, winnersResult, totalsResult] = await Promise.all([
+    const [storiesResult, awardsResult, winnersResult, nomineesResult, totalsResult] = await Promise.all([
         admin.from('SM_stories').select('*').order('page_number', { ascending: true }).order('link', { ascending: true }),
         admin.from('SM_awards').select('*').order('display_order', { ascending: true }).order('name', { ascending: true }),
         admin.from('SM_award_winners').select('id, award_id, story_id, rank'),
+        admin.from('SM_award_nominees').select('id, award_id, story_id, created_at').order('created_at', { ascending: true }),
         admin.from('SM_vote_totals').select('award_id, story_id, vote_count, total_points, average_points'),
     ]);
 
-    const error = storiesResult.error || awardsResult.error || winnersResult.error || totalsResult.error;
+    const error = storiesResult.error || awardsResult.error || winnersResult.error || nomineesResult.error || totalsResult.error;
     if (error) throw error;
 
     const stories = await Promise.all((storiesResult.data ?? []).map(async (story) => {
@@ -172,6 +137,7 @@ async function collectionPayload() {
         stories,
         awards: awardsResult.data ?? [],
         winners: winnersResult.data ?? [],
+        nominees: nomineesResult.data ?? [],
         voteTotals: totalsResult.data ?? [],
     };
 }
@@ -180,13 +146,11 @@ async function saveStory(request: Request) {
     const form = await request.formData();
     const rawPayload = {
         title: form.get('title'),
-        page_number: form.get('page_number'),
         dream_date: form.get('dream_date'),
         paragraphs: JSON.parse(String(form.get('paragraphs') ?? '[]')),
         image_prompt: form.get('image_prompt'),
     };
-    const placement = await nextStoryPlacement(rawPayload.page_number);
-    const story = storyPayload(rawPayload, placement);
+    const story = storyPayload(rawPayload);
 
     // Accept the previous one-step upload shape while new clients use the follow-up upload action.
     const file = form.get('image');
@@ -195,7 +159,7 @@ async function saveStory(request: Request) {
         if (file.size > 12 * 1024 * 1024) throw new Error('Cover photo must be 12 MB or smaller.');
         if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPG, PNG, or WebP image.');
         const extension = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
-        imagePath = `img/${placement.link}-${crypto.randomUUID()}.${extension}`;
+        imagePath = `img/story-${crypto.randomUUID()}.${extension}`;
         const upload = await admin.storage.from(imageBucket).upload(imagePath, file, {
             cacheControl: '3600',
             contentType: file.type,
@@ -204,7 +168,13 @@ async function saveStory(request: Request) {
         if (upload.error) throw upload.error;
     }
 
-    const insert = await admin.from('SM_stories').insert({ ...story, image_path: imagePath }).select('*').single();
+    const insert = await admin.rpc('sm_create_story', {
+        p_title: story.title,
+        p_dream_date: story.dream_date,
+        p_paragraphs: story.paragraphs,
+        p_image_prompt: story.image_prompt,
+        p_image_path: imagePath,
+    });
     if (insert.error) {
         if (imagePath) await admin.storage.from(imageBucket).remove([imagePath]);
         throw insert.error;
@@ -220,12 +190,13 @@ async function updateStory(request: Request) {
     const paragraphs = JSON.parse(String(form.get('paragraphs') ?? '[]'));
     if (!Array.isArray(paragraphs) || !paragraphs.length) throw new Error('At least one paragraph is required.');
 
-    const cleanParagraphs = paragraphs.map((paragraph) => requiredText(paragraph, 'Paragraph', 20000));
-    const result = await admin.from('SM_stories')
-        .update({ title, dream_date: dreamDate, paragraphs: cleanParagraphs, updated_at: new Date().toISOString() })
-        .eq('id', storyId)
-        .select('*')
-        .single();
+    const cleanParagraphs = paragraphs.map((paragraph) => requiredTextPreservingWhitespace(paragraph, 'Paragraph', 20000));
+    const result = await admin.rpc('sm_update_story', {
+        p_story_id: storyId,
+        p_title: title,
+        p_dream_date: dreamDate,
+        p_paragraphs: cleanParagraphs,
+    });
     if (result.error) throw result.error;
     return result.data;
 }
@@ -280,7 +251,7 @@ async function saveStoryPrompt(body: Record<string, unknown>) {
 async function saveStoryComment(body: Record<string, unknown>) {
     const storyId = requiredText(body.story_id, 'Story', 80);
     const commentDate = requiredText(body.comment_date, 'Comment date', 80);
-    const comment = requiredText(body.comment, 'Comment', 20000);
+    const comment = requiredTextPreservingWhitespace(body.comment, 'Comment', 20000);
     const comments = await readStoryComments(storyId);
     comments.push({ date: commentDate, paragraphs: [comment] });
     return updateStoryComments(storyId, comments);
@@ -290,7 +261,7 @@ async function updateStoryComment(body: Record<string, unknown>) {
     const storyId = requiredText(body.story_id, 'Story', 80);
     const commentIndex = Number(body.comment_index);
     const commentDate = requiredText(body.comment_date, 'Comment date', 80);
-    const comment = requiredText(body.comment, 'Comment', 20000);
+    const comment = requiredTextPreservingWhitespace(body.comment, 'Comment', 20000);
     if (!Number.isInteger(commentIndex) || commentIndex < 0) throw new Error('Comment index is invalid.');
 
     const comments = await readStoryComments(storyId);
@@ -329,13 +300,10 @@ async function updateStoryComments(storyId: string, comments: unknown[]) {
 
 async function deleteStory(body: Record<string, unknown>) {
     const storyId = requiredText(body.story_id, 'Story', 80);
-    const existing = await admin.from('SM_stories').select('id, image_path').eq('id', storyId).single();
-    if (existing.error) throw existing.error;
-
-    const result = await admin.from('SM_stories').delete().eq('id', storyId);
+    const result = await admin.rpc('sm_delete_story', { p_story_id: storyId });
     if (result.error) throw result.error;
-    if (existing.data.image_path) {
-        const cleanup = await admin.storage.from(imageBucket).remove([existing.data.image_path]);
+    if (result.data?.image_path) {
+        const cleanup = await admin.storage.from(imageBucket).remove([result.data.image_path]);
         if (cleanup.error) console.error('Unable to remove deleted story image', cleanup.error);
     }
     return { deleted: true, story_id: storyId };
@@ -345,26 +313,13 @@ async function setWinner(body: Record<string, unknown>) {
     const awardId = requiredText(body.award_id, 'Award', 80);
     const storyId = requiredText(body.story_id, 'Story', 80);
     const rank = Number(body.rank);
-    if (![1, 2, 3].includes(rank)) throw new Error('Winner rank is invalid.');
+    if (!Number.isInteger(rank) || ![1, 2, 3].includes(rank)) throw new Error('Winner rank is invalid.');
 
-    const [award, story, currentAssignment] = await Promise.all([
-        admin.from('SM_awards').select('id, active').eq('id', awardId).single(),
-        admin.from('SM_stories').select('id, published').eq('id', storyId).single(),
-        admin.from('SM_award_winners').select('rank').eq('award_id', awardId).eq('story_id', storyId).maybeSingle(),
-    ]);
-    if (award.error) throw award.error;
-    if (story.error) throw story.error;
-    if (award.data.active === false) throw new Error('This award is inactive.');
-    if (story.data.published === false) throw new Error('This dream is not published.');
-    if (currentAssignment.error) throw currentAssignment.error;
-    if (currentAssignment.data && Number(currentAssignment.data.rank) !== rank) {
-        throw new Error('This dream already has another place in this award.');
-    }
-
-    const result = await admin.from('SM_award_winners')
-        .upsert({ award_id: awardId, story_id: storyId, rank }, { onConflict: 'award_id,rank' })
-        .select('*')
-        .single();
+    const result = await admin.rpc('sm_set_award_winner', {
+        p_award_id: awardId,
+        p_story_id: storyId,
+        p_rank: rank,
+    });
     if (result.error) throw result.error;
     return result.data;
 }
@@ -372,10 +327,53 @@ async function setWinner(body: Record<string, unknown>) {
 async function removeWinner(body: Record<string, unknown>) {
     const awardId = requiredText(body.award_id, 'Award', 80);
     const rank = Number(body.rank);
-    if (![1, 2, 3].includes(rank)) throw new Error('Winner rank is invalid.');
-    const result = await admin.from('SM_award_winners').delete().eq('award_id', awardId).eq('rank', rank);
+    if (!Number.isInteger(rank) || ![1, 2, 3].includes(rank)) throw new Error('Winner rank is invalid.');
+    const result = await admin.rpc('sm_remove_award_winner', {
+        p_award_id: awardId,
+        p_rank: rank,
+    });
     if (result.error) throw result.error;
     return { deleted: true, award_id: awardId, rank };
+}
+
+async function nomineeStoryIds(body: Record<string, unknown>, awardId: string) {
+    const raw = body.story_ids ?? body.nominee_story_ids ?? body.nominees ?? body.nominee_ids;
+    if (!Array.isArray(raw)) throw new Error('Nominee story IDs are required.');
+
+    let storyIds = raw.map((item, index) => {
+        const value = item && typeof item === 'object'
+            ? (item as Record<string, unknown>).story_id ?? (item as Record<string, unknown>).id
+            : item;
+        return requiredText(value, `Nominee ${index + 1}`, 80);
+    });
+
+    // Also accept persisted nominee row IDs for callers using nominee_ids.
+    if (body.nominee_ids !== undefined
+        && body.story_ids === undefined
+        && body.nominee_story_ids === undefined
+        && body.nominees === undefined
+        && storyIds.length) {
+        const existing = await admin.from('SM_award_nominees')
+            .select('id, story_id')
+            .eq('award_id', awardId)
+            .in('id', storyIds);
+        if (existing.error) throw existing.error;
+        const storyByNomineeId = new Map((existing.data ?? []).map((nominee) => [nominee.id, nominee.story_id]));
+        storyIds = storyIds.map((id) => storyByNomineeId.get(id) ?? id);
+    }
+
+    return storyIds;
+}
+
+async function replaceAwardNominees(body: Record<string, unknown>) {
+    const awardId = requiredText(body.award_id, 'Award', 80);
+    const storyIds = await nomineeStoryIds(body, awardId);
+    const result = await admin.rpc('sm_replace_award_nominees', {
+        p_award_id: awardId,
+        p_story_ids: storyIds,
+    });
+    if (result.error) throw result.error;
+    return { award_id: awardId, nominees: result.data ?? [] };
 }
 
 async function reorderAwards(body: Record<string, unknown>) {
@@ -435,6 +433,9 @@ async function handleAction(action: string, request: Request, body: Record<strin
     if (action === 'delete-story') return deleteStory(body);
     if (action === 'set-winner') return setWinner(body);
     if (action === 'remove-winner') return removeWinner(body);
+    if (action === 'replace-nominees' || action === 'replace-award-nominees' || action === 'save-award-nominees') {
+        return replaceAwardNominees(body);
+    }
     if (action === 'reorder-awards') return reorderAwards(body);
     if (action === 'update-award') return updateAward(body);
     if (action === 'delete-award') return deleteAward(body);
@@ -459,10 +460,11 @@ async function handleAction(action: string, request: Request, body: Record<strin
         const storyId = requiredText(body.story_id, 'Story', 80);
         const points = Number(body.points);
         if (!Number.isInteger(points) || points < 1 || points > 10) throw new Error('Points must be from 1 to 10.');
-        const result = await admin.from('SM_votes')
-            .upsert({ award_id: awardId, story_id: storyId, points }, { onConflict: 'award_id,story_id' })
-            .select('*')
-            .single();
+        const result = await admin.rpc('sm_record_vote', {
+            p_award_id: awardId,
+            p_story_id: storyId,
+            p_points: points,
+        });
         if (result.error) throw result.error;
         return result.data;
     }

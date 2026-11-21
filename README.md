@@ -22,7 +22,7 @@ supabase link --project-ref nirtjqjcqaxlrskuvpjy
 supabase db push --linked --include-all
 ```
 
-The migration makes the existing tables private, adds `image_prompt`, and changes votes to one owner score per story and award.
+The migrations make the existing tables private, add `image_prompt`, persist per-award nominees, and keep one owner score per story and award. The latest migration backfills every current winner (and any already-voted story) as a nominee, then normalizes stories into date-driven pages beginning at `p2`.
 
 Set the Edge Function secrets without committing them:
 
@@ -44,7 +44,7 @@ The function uses Supabase's server-side `SUPABASE_SERVICE_ROLE_KEY` automatical
 
 1. Open Add dream after unlocking Somniva.
 2. Enter the title, date, and paragraphs.
-3. Choose whether the dream opens a new page or joins an existing page. The page number and link are generated automatically.
+3. Pages and links are generated atomically from distinct dream dates (`p2`, `p2a`, `p2b`, then `p3`, and so on).
 4. Create the dream without an image.
 5. From the dream's story card, choose **Generate** to create and copy the fixed Somniva prompt.
 6. Use **Upload photo** beside the story to add or replace its private cover image later.
@@ -53,7 +53,23 @@ The function uses Supabase's server-side `SUPABASE_SERVICE_ROLE_KEY` automatical
 
 The generator always uses the same cinematic surreal dream-journal style: indigo, violet, midnight blue, moonlight, symbolic atmosphere, painterly realism, softly blurred unrecognizable faces, and no text or watermarks.
 
-Hall of Fame podium places are edited directly from their cards. Each award category can use a dream only once across Top 1, Top 2, and Top 3. New awards receive their position automatically; the Hall of Fame screen provides first-to-last and last-to-first viewing order.
+Hall of Fame podium places are edited directly from their cards. Each award has a persisted nominee list, and a nominee can appear only once across Top 1, Top 2, and Top 3. Podium moves are atomic and may leave gaps; votes and winner assignments are accepted only for nominees.
+
+## Backend Actions
+
+`collection` (and the legacy `archive` alias) returns `stories`, `awards`, `nominees`, `winners`, and `voteTotals` through the password-protected Edge Function. Nominee rows contain `id`, `award_id`, `story_id`, and `created_at`.
+
+Replace an award's nominees with story IDs using:
+
+```json
+{
+  "action": "replace-nominees",
+  "award_id": "<award-id>",
+  "story_ids": ["<story-id>", "<story-id>"]
+}
+```
+
+`set-winner`, `vote`, `save-story`, `update-story`, and `delete-story` retain their existing action names. Story create/update/delete responses contain the final date-driven `page_number` and `link` after atomic renumbering. The legacy `page_number` form field is accepted but ignored.
 
 ## Frontend Configuration
 
