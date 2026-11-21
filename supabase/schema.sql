@@ -135,7 +135,7 @@ begin
     create temporary table sm_story_placements on commit drop as
     select
         current_story.id,
-        (1 + dense_rank() over (order by current_story.dream_date))::integer as page_number,
+        dense_rank() over (order by current_story.dream_date)::integer as page_number,
         row_number() over (
             partition by current_story.dream_date
             order by current_story.created_at asc, current_story.page_number asc, current_story.link asc, current_story.id asc
@@ -189,7 +189,7 @@ begin
     )
     values (
         p_title,
-        2,
+        1,
         '__somniva_pending__' || gen_random_uuid()::text,
         p_dream_date,
         p_paragraphs,
@@ -314,29 +314,6 @@ begin
            or not exists (select 1 from public."SM_stories" where id = ids.story_id)
     ) then
         raise exception 'Every nominee must be an existing dream.';
-    end if;
-
-    if exists (
-        select 1
-        from public."SM_award_nominees" nominee_row
-        where nominee_row.award_id = p_award_id
-          and not (nominee_row.story_id = any(requested_ids))
-          and (
-              exists (
-                  select 1
-                  from public."SM_award_winners" winner
-                  where winner.award_id = p_award_id
-                    and winner.story_id = nominee_row.story_id
-              )
-              or exists (
-                  select 1
-                  from public."SM_votes" vote
-                  where vote.award_id = p_award_id
-                    and vote.story_id = nominee_row.story_id
-              )
-          )
-    ) then
-        raise exception 'A nominee with votes or a podium place cannot be removed.';
     end if;
 
     delete from public."SM_award_nominees" nominee_row

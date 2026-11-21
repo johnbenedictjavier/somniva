@@ -13,6 +13,7 @@ const state = {
     currentPage: 1,
     itemsPerPage: 8,
     storyPageIndex: 0,
+    storyPageNumber: 1,
     storyPages: [],
     currentStory: null,
     commentStory: null,
@@ -26,6 +27,7 @@ const state = {
     nomineeTouchStartX: 0,
     nomineeTouchViewport: null,
     confirmationAction: null,
+    confirmationCancel: null,
     searchQuery: '',
     modalScrollY: 0,
     unlockTimer: null,
@@ -85,10 +87,10 @@ async function init() {
     document.body.classList.add('session-loading');
     setAppLoading(true);
     setUnlockLoading(true);
-    $('#unlock-status').textContent = 'Restoring your private session...';
+    $('#unlock-status').textContent = '';
     try {
-        const collection = await apiRequest('collection');
         unlockApp();
+        const collection = await apiRequest('collection');
         applyCollection(collection);
     } catch {
         lockApp('Your private session expired. Unlock Somniva again.');
@@ -115,8 +117,8 @@ function bindEvents() {
     $('#winner-open-story')?.addEventListener('click', openWinnerStory);
     $('#nominee-modal-close')?.addEventListener('click', () => closeModal('nominee-modal'));
     $('#nominee-save-button')?.addEventListener('click', saveNominees);
-    $('#confirmation-close')?.addEventListener('click', () => closeModal('confirmation-modal'));
-    $('#confirmation-cancel')?.addEventListener('click', () => closeModal('confirmation-modal'));
+    $('#confirmation-close')?.addEventListener('click', handleConfirmationCancel);
+    $('#confirmation-cancel')?.addEventListener('click', handleConfirmationCancel);
     $('#confirmation-confirm')?.addEventListener('click', handleConfirmationConfirm);
     $('#comment-form')?.addEventListener('submit', handleCommentSubmit);
     $('#story-search-form')?.addEventListener('submit', handleSearchSubmit);
@@ -138,7 +140,8 @@ function bindEvents() {
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             const openModalElement = $('.modal-backdrop:not([hidden])');
-            if (openModalElement) closeModal(openModalElement.id);
+            if (openModalElement?.id === 'confirmation-modal') handleConfirmationCancel();
+            else if (openModalElement) closeModal(openModalElement.id);
             else hideSearchResults();
         }
     });
@@ -282,7 +285,9 @@ function bindEvents() {
 
     $$('.modal-backdrop').forEach((modal) => {
         modal.addEventListener('click', (event) => {
-            if (event.target === modal) closeModal(modal.id);
+            if (event.target !== modal) return;
+            if (modal.id === 'confirmation-modal') handleConfirmationCancel();
+            else closeModal(modal.id);
         });
     });
 
@@ -296,6 +301,7 @@ function bindEvents() {
     $('#award-form')?.addEventListener('submit', handleAwardSubmit);
     $('#vote-form')?.addEventListener('submit', handleVoteSubmit);
     $('#install-button')?.addEventListener('click', installPwa);
+    updateSearchClearState();
 }
 
 async function apiRequest(action, payload = {}) {
@@ -333,8 +339,9 @@ async function handleUnlock(event) {
         const result = await apiRequest('unlock', { password: $('#unlock-password').value });
         state.token = result.token;
         sessionStorage.setItem('somniva_token', state.token);
-        const collection = await apiRequest('collection');
+        setAppLoading(true);
         unlockApp();
+        const collection = await apiRequest('collection');
         applyCollection(collection);
         $('#unlock-password').value = '';
     } catch (error) {
@@ -495,12 +502,13 @@ function renderHome() {
         date.textContent = `${formatDate(recent.dream_date)} · ${recent.link}`;
         const excerpt = document.createElement('p');
         excerpt.className = 'feature-excerpt';
-        excerpt.textContent = plainText(getStoryContent(recent)) || 'A new dream is waiting to be read.';
+        excerpt.textContent = storyExcerpt(recent) || 'A new dream is waiting to be read.';
         const button = document.createElement('button');
         button.className = 'text-button feature-link';
         button.type = 'button';
         button.dataset.storyLink = recent.link;
-        button.textContent = 'Read this dream →';
+        button.textContent = 'Read full dream →';
+        button.setAttribute('aria-label', `Read the full dream: ${recent.title}`);
         recentContainer.append(title, date, excerpt, button);
     }
 
@@ -902,11 +910,11 @@ function getWinnerForSlot(awardId, rank) {
     return state.winners.find((winner) => winner.award_id === awardId && Number(winner.rank) === rank);
 }
 
-function openNomineeModal(awardId) {
+function openNomineeModal(awardId, selectedStoryIds = null) {
     const award = state.awards.find((item) => item.id === awardId);
     if (!award) return;
     state.nomineeAwardId = award.id;
-    state.nomineeSelection = new Set(getNomineesForAward(award.id).map((nominee) => nominee.story_id));
+    state.nomineeSelection = new Set(selectedStoryIds || getNomineesForAward(award.id).map((nominee) => nominee.story_id));
     $('#nominee-heading').textContent = `Nominees for ${award.name}`;
     $('#nominee-intro').textContent = award.description || 'Select every dream that belongs in this award.';
     $('#nominee-form-status').textContent = '';
@@ -949,24 +957,62 @@ function toggleNomineeSelection(option) {
     option.setAttribute('aria-selected', String(state.nomineeSelection.has(storyId)));
 }
 
-async function saveNominees() {
-    if (!state.nomineeAwardId) return;
-    const status = $('#nominee-form-status');
+function getNomineeRemovalImpact(awardId, selectedStoryIds) {
+    const selected = new Set(selectedStoryIds);
+    return getNomineesForAward(awardId)
+        .filter((nominee) => !selected.has(nominee.story_id))
+        .map((nominee) => ({
+            story: getStory(nominee.story_id),
+            hasWinner: state.winners.some((winner) => winner.award_id === awardId && winner.story_id === nominee.story_id),
+            hasVote: state.voteTotals.some((vote) => vote.award_id === awardId && vote.story_id === nominee.story_id),
+        }))
+        .filter((item) => item.hasWinner || item.hasVote);
+}
+
+async function persistNominees(awardId, storyIds) {
     const button = $('#nominee-save-button');
-    status.textContent = 'Saving nominees...';
     setButtonLoading(button, true);
     try {
         await apiRequest('replace-nominees', {
-            award_id: state.nomineeAwardId,
-            story_ids: [...state.nomineeSelection],
+            award_id: awardId,
+            story_ids: storyIds,
         });
         closeModal('nominee-modal');
         showToast('Nominees saved.');
         await loadCollection(false);
-    } catch (error) {
-        status.textContent = error.message || 'Unable to save nominees.';
     } finally {
         setButtonLoading(button, false);
+    }
+}
+
+async function saveNominees() {
+    if (!state.nomineeAwardId) return;
+    const status = $('#nominee-form-status');
+    const awardId = state.nomineeAwardId;
+    const storyIds = [...state.nomineeSelection];
+    const impact = getNomineeRemovalImpact(awardId, storyIds);
+    if (impact.length) {
+        const names = impact
+            .map((item) => item.story?.title || 'Untitled dream')
+            .slice(0, 3)
+            .join(', ');
+        const extra = impact.length > 3 ? ` and ${impact.length - 3} more` : '';
+        openConfirmation({
+            title: 'Clear nominee data?',
+            message: `${names}${extra} will lose its points and podium place when removed from this award.`,
+            confirmLabel: 'Remove and clear',
+            danger: true,
+            onConfirm: () => persistNominees(awardId, storyIds),
+            onCancel: () => openNomineeModal(awardId, storyIds),
+        });
+        return;
+    }
+
+    status.textContent = 'Saving nominees...';
+    try {
+        await persistNominees(awardId, storyIds);
+    } catch (error) {
+        status.textContent = error.message || 'Unable to save nominees.';
     }
 }
 
@@ -1074,7 +1120,16 @@ function renderStories() {
     if (!container) return;
     container.replaceChildren();
     state.storyPages = buildStoryPages();
-    state.storyPageIndex = Math.min(Math.max(state.storyPageIndex, 0), Math.max(0, state.storyPages.length - 1));
+    if (!state.storyPages.length) {
+        state.storyPageIndex = 0;
+        state.storyPageNumber = null;
+    } else {
+        const requestedIndex = state.storyPages.findIndex(([pageNumber]) => Number(pageNumber) === Number(state.storyPageNumber));
+        state.storyPageIndex = requestedIndex >= 0
+            ? requestedIndex
+            : Math.min(Math.max(state.storyPageIndex, 0), state.storyPages.length - 1);
+        state.storyPageNumber = state.storyPages[state.storyPageIndex][0];
+    }
     renderStoryPageControls();
     if (!state.stories.length) {
         container.append(createEmptyState('Dream pages will appear here.'));
@@ -1129,10 +1184,7 @@ function renderStoryPageControls() {
     const total = state.storyPages.length;
     if (!total) return;
 
-    const windowStart = Math.min(
-        Math.max(0, state.storyPageIndex - 4),
-        Math.max(0, total - 10),
-    );
+    const windowStart = Math.floor(state.storyPageIndex / 10) * 10;
     state.storyPages.slice(windowStart, windowStart + 10).forEach(([pageNumber], offset) => {
         const button = document.createElement('button');
         button.className = 'story-page-number';
@@ -1146,8 +1198,8 @@ function renderStoryPageControls() {
         }
         numbers.append(button);
     });
-    $('#stories-prev-page').disabled = state.storyPageIndex <= 0;
-    $('#stories-next-page').disabled = state.storyPageIndex >= total - 1;
+    $('#stories-prev-page').disabled = windowStart === 0;
+    $('#stories-next-page').disabled = windowStart + 10 >= total;
 }
 
 function handleStoryPageClick(event) {
@@ -1156,14 +1208,17 @@ function handleStoryPageClick(event) {
     const index = Number(button.dataset.storyPage);
     if (!Number.isInteger(index)) return;
     state.storyPageIndex = index;
+    state.storyPageNumber = state.storyPages[index]?.[0] ?? state.storyPageNumber;
     renderStories();
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function changeStoryPage(direction) {
-    const nextIndex = state.storyPageIndex + direction;
+    const windowStart = Math.floor(state.storyPageIndex / 10) * 10;
+    const nextIndex = windowStart + direction * 10;
     if (nextIndex < 0 || nextIndex >= state.storyPages.length) return;
     state.storyPageIndex = nextIndex;
+    state.storyPageNumber = state.storyPages[nextIndex][0];
     renderStories();
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1172,6 +1227,7 @@ function selectStoryPage(pageNumber) {
     const index = state.storyPages.findIndex(([number]) => Number(number) === Number(pageNumber));
     if (index < 0) return;
     state.storyPageIndex = index;
+    state.storyPageNumber = state.storyPages[index][0];
     renderStories();
 }
 
@@ -1726,8 +1782,9 @@ function resetStoryModal() {
     setDefaultDate();
 }
 
-function openConfirmation({ title, message, confirmLabel = 'Confirm', danger = false, onConfirm }) {
+function openConfirmation({ title, message, confirmLabel = 'Confirm', danger = false, onConfirm, onCancel = null }) {
     state.confirmationAction = onConfirm;
+    state.confirmationCancel = onCancel;
     $('#confirmation-heading').textContent = title;
     $('#confirmation-message').textContent = message;
     $('#confirmation-confirm').textContent = confirmLabel;
@@ -1735,6 +1792,12 @@ function openConfirmation({ title, message, confirmLabel = 'Confirm', danger = f
     $('#confirmation-status').textContent = '';
     openModal('confirmation-modal');
     $('#confirmation-cancel').focus();
+}
+
+function handleConfirmationCancel() {
+    const action = state.confirmationCancel;
+    closeModal('confirmation-modal');
+    if (typeof action === 'function') action();
 }
 
 async function handleConfirmationConfirm() {
@@ -1796,7 +1859,10 @@ function closeModal(id) {
         state.nomineeAwardId = null;
         state.nomineeSelection = new Set();
     }
-    if (id === 'confirmation-modal') state.confirmationAction = null;
+    if (id === 'confirmation-modal') {
+        state.confirmationAction = null;
+        state.confirmationCancel = null;
+    }
     if (id === 'image-modal') {
         state.imageStory = null;
         if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
@@ -1821,6 +1887,7 @@ function closeAllModals() {
     state.nomineeAwardId = null;
     state.nomineeSelection = new Set();
     state.confirmationAction = null;
+    state.confirmationCancel = null;
     if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
     state.previewUrl = '';
 }
@@ -1892,12 +1959,14 @@ function highlightSearchMatch(element, query) {
 
 function handleSearchInput(event) {
     state.searchQuery = event.target.value.trim();
+    updateSearchClearState();
     renderSearchResults();
 }
 
 function handleSearchSubmit(event) {
     event.preventDefault();
     state.searchQuery = $('#story-search-input').value.trim();
+    updateSearchClearState();
     const results = findSearchResults(state.searchQuery);
     if (results.length) {
         goToStory(results[0].story.link, results[0].paragraphIndex);
@@ -1910,7 +1979,19 @@ function handleSearchSubmit(event) {
 function clearStorySearch() {
     $('#story-search-input').value = '';
     state.searchQuery = '';
+    updateSearchClearState();
     hideSearchResults();
+}
+
+function updateSearchClearState() {
+    const input = $('#story-search-input');
+    const form = $('#story-search-form');
+    const clear = $('#story-search-clear');
+    if (!input || !form || !clear) return;
+    const hasQuery = Boolean(input.value);
+    form.classList.toggle('has-query', hasQuery);
+    clear.disabled = !hasQuery;
+    clear.tabIndex = hasQuery ? 0 : -1;
 }
 
 function renderSearchResults() {
@@ -2039,6 +2120,13 @@ function getStoryContent(story) {
     if (!story) return '';
     if (typeof story.content === 'string') return story.content;
     return Array.isArray(story.paragraphs) ? story.paragraphs.join('\n\n') : '';
+}
+
+function storyExcerpt(story, maxLength = 220) {
+    const text = plainText(getStoryContent(story)).replace(/\s+/g, ' ').trim();
+    if (text.length <= maxLength) return text;
+    const clipped = text.slice(0, maxLength - 1).replace(/\s+\S*$/, '').trim();
+    return `${clipped || text.slice(0, maxLength - 1).trim()}...`;
 }
 
 function formatDate(value) {

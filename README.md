@@ -22,7 +22,7 @@ supabase link --project-ref nirtjqjcqaxlrskuvpjy
 supabase db push --linked --include-all
 ```
 
-The migrations make the existing tables private, add `image_prompt`, persist per-award nominees, and keep one owner score per story and award. The latest migration backfills every current winner (and any already-voted story) as a nominee, then normalizes stories into date-driven pages beginning at `p2`.
+The migrations make the existing tables private, add `image_prompt`, persist per-award nominees, and keep one owner score per story and award. The latest migration backfills every current winner (and any already-voted story) as a nominee, then normalizes stories into date-driven pages beginning at `p1`.
 
 Set the Edge Function secrets without committing them:
 
@@ -44,7 +44,7 @@ The function uses Supabase's server-side `SUPABASE_SERVICE_ROLE_KEY` automatical
 
 1. Open Add dream after unlocking Somniva.
 2. Enter the title, date, and paragraphs.
-3. Pages and links are generated atomically from distinct dream dates (`p2`, `p2a`, `p2b`, then `p3`, and so on).
+3. Pages and links are generated atomically from distinct dream dates (`p1`, `p1a`, `p1b`, then `p2`, and so on).
 4. Create the dream without an image.
 5. From the dream's story card, choose **Generate** to create and copy the fixed Somniva prompt.
 6. Use **Upload photo** beside the story to add or replace its private cover image later.
