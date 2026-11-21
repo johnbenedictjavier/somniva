@@ -1458,17 +1458,13 @@ label {
     right: 10px;
     z-index: 2;
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 5px;
-    pointer-events: none;
-}
-
-.story-status-badges.is-decorative .story-status-badge {
+    align-items: center;
+    justify-content: flex-end;
     pointer-events: none;
 }
 
 .story-status-badge {
+    position: relative;
     display: inline-grid;
     width: 30px;
     height: 30px;
@@ -1486,8 +1482,13 @@ label {
     transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
 }
 
+.story-status-badge + .story-status-badge {
+    margin-left: -9px;
+}
+
 .story-status-badge:hover,
 .story-status-badge:focus-visible {
+    z-index: 10;
     transform: scale(1.08);
     background: rgba(15, 12, 41, 0.98);
     outline: 2px solid currentColor;

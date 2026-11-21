@@ -530,7 +530,6 @@ function renderHomeMarquee() {
             card.tabIndex = -1;
         }
         const image = createStoryImage(story, 'marquee-image');
-        appendStoryStatusBadges(card, story, index < firstPlaces.length);
         const label = document.createElement('span');
         label.className = 'marquee-label';
         label.textContent = award.name;
@@ -670,18 +669,13 @@ function createAwardStatusBadge(status, className) {
     return badge;
 }
 
-function appendStoryStatusBadges(container, story, isInteractive = true) {
+function appendStoryStatusBadges(container, story) {
     if (!container || !story) return;
     const statuses = getStoryAwardStatuses(story.id);
     if (!statuses.length) return;
     const stack = document.createElement('span');
     stack.className = 'story-status-badges';
     statuses.forEach((status) => stack.append(createAwardStatusBadge(status, 'story-status-badge')));
-    if (!isInteractive) {
-        stack.classList.add('is-decorative');
-        stack.setAttribute('aria-hidden', 'true');
-        stack.querySelectorAll('[role="button"]').forEach((badge) => badge.setAttribute('tabindex', '-1'));
-    }
     container.append(stack);
 }
 

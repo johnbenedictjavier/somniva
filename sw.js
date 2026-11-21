@@ -1,4 +1,4 @@
-const CACHE_NAME = 'somniva-shell-v12';
+const CACHE_NAME = 'somniva-shell-v13';
 const APP_SHELL = [
     './',
     './index.html',
